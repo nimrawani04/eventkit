@@ -38,7 +38,11 @@ the later certificate step.
 
 ## Quickstart
 
+Activate the project environment first so the commands use the pinned local
+tools:
+
 ```sh
+. .venv/bin/activate
 eventkit init demo
 eventkit run demo/event.toml --dry-run
 eventkit run demo/event.toml
@@ -70,6 +74,27 @@ make test
 ```
 
 The test suite is offline at runtime and uses only the local source tree.
+`tests/conftest.py` blocks sockets and subprocesses and includes a canary test
+so an accidental network or process dependency fails loudly.
+
+## Sample output
+
+A dry run on the included sample reports the deliberate input problems before
+writing anything:
+
+```text
+Dry run: 8 rows, 5 included, 3 excluded, 3 errors, 4 warnings
+create    roster.csv
+create    issues.md
+create    report.md
+create    audit.jsonl
+No files written.
+```
+
+The trust model for the planned certificate step is intentionally limited: a
+future `VALID` result will prove only that a code appears in an organizer's
+published manifest. The recipient must obtain that manifest from a source they
+trust; eventkit will not provide a hosted trust service.
 
 ## Docker
 
@@ -81,6 +106,23 @@ docker run --rm --network none eventkit eventkit --version
 
 The image builds with Python 3.12, installs the pinned test tools, and has no
 network requirement when the commands above run.
+
+## Deployment / release
+
+The current slice is a local CLI rather than a hosted service. For a
+reproducible release or demo, build the image and run it with a mounted event
+directory:
+
+```sh
+docker build -t eventkit .
+docker run --rm --network none \
+  -v "$PWD/demo:/app/demo" \
+  eventkit eventkit run demo/event.toml
+```
+
+The generated kit remains in the mounted directory. Future certificate
+manifests should be published through an organizer-controlled channel; eventkit
+itself makes no network calls and does not send email.
 
 ## Development notes
 
