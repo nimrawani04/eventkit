@@ -5,7 +5,9 @@ command-line interface and file writers are intentionally left for later
 milestones.
 """
 
+from .config import ConfigError, EventConfig, load_config
 from .csvio import CsvRow, CsvTable, read_csv, read_csv_text
+from .output import FileAction, OutputResult, format_plan, plan_or_write_roster, render_issues_md, render_report, render_roster_csv
 from .model import (
     Attendee,
     Issue,
@@ -36,10 +38,14 @@ from .validate import (
 __all__ = [
     "Attendee",
     "COMMON_EMAIL_DOMAINS",
+    "ConfigError",
     "CsvRow",
     "CsvTable",
+    "EventConfig",
+    "FileAction",
     "Issue",
     "IssueLevel",
+    "OutputResult",
     "RosterResult",
     "RosterRow",
     "RowStatus",
@@ -54,6 +60,12 @@ __all__ = [
     "normalize_institution",
     "normalize_name",
     "normalize_phone",
+    "format_plan",
+    "load_config",
+    "plan_or_write_roster",
+    "render_issues_md",
+    "render_report",
+    "render_roster_csv",
     "read_csv",
     "read_csv_text",
     "validate",
