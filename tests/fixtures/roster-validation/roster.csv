@@ -1,0 +1,10 @@
+name,email,phone,institution
+Missing email,,+1 202 555 0100,Missing University
+Invalid email,bad-address,+1 202 555 0101,Invalid University
+First Person,first@example.com,202-555-0102,Duplicate University
+Exact Later,FIRST@EXAMPLE.COM,202-555-0103,Duplicate University
+Phone Match One,202-555-0104@example.com,(202) 555-0199,Phone University
+Phone Match Two,202-555-0105@example.com,202 555-0199,Phone University
+Short Phone,short@example.com,123-4567,Short University
+Domain Typo,typo@gmial.com,202-555-0106,Typo University
+Long Phone,long@example.com,1234567890123456,Long University

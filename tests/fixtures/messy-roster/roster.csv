@@ -1,0 +1,5 @@
+name,email,notes
+Alice Example,alice@example.com,"Attendee said, ""hello""
+on two lines"
+
+Bob Example,bob@example.com,single line
