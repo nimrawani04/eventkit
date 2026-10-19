@@ -17,9 +17,10 @@ The first buildable slice implements the PRD's roster milestone:
 - deterministic attendance-filtered certificate SVGs, a privacy-preserving
   `manifest.json`, and offline `verify`.
 - deterministic printable `checkin.html` with stable check-in codes.
+- deterministic UTC `schedule.ics` and grouped, clash-marked `agenda.html`.
 
-Schedule, email drafts, and `clean` are planned PRD slices and are intentionally
-not claimed as implemented yet.
+Email drafts and `clean` are planned PRD slices and are intentionally not
+claimed as implemented yet.
 
 ## Requirements
 
@@ -102,6 +103,31 @@ and SHA-256 hashes of canonical codes; it never stores email addresses. A
 `verify`. Recipients must obtain that manifest from an organizer or another
 source they trust.
 
+## Schedule, calendar, and agenda
+
+Enable the schedule step and provide a schedule CSV with `start`, `end`,
+`title`, and `room` columns. A `speaker` column is optional:
+
+```toml
+[input]
+registrations = "data/registrations.csv"
+schedule = "data/schedule.csv"
+
+[event]
+utc_offset = "+05:30"
+
+[output]
+dir = "kit"
+steps = ["roster", "checkin", "schedule", "certificates"]
+```
+
+Times use `YYYY-MM-DD HH:MM` in the event's configured local offset. Invalid
+or backwards sessions receive SC01 and are excluded from generated calendar
+output. Overlapping sessions in one room receive SC02; overlapping sessions
+with the same speaker receive SC03. Sessions that touch at an endpoint are
+allowed. The run writes `schedule.ics` in UTC with CRLF line endings and
+`agenda.html` grouped by local day with clashes marked.
+
 ## Printable check-in sheet
 
 Add `checkin` to the output steps:
@@ -142,18 +168,20 @@ A dry run on the included sample reports the deliberate input problems before
 writing anything:
 
 ```text
-Dry run: 8 rows, 5 included, 3 excluded, 3 errors, 4 warnings
+Dry run: 8 rows, 5 included, 3 excluded, 6 errors, 4 warnings
 create    roster.csv
 create    issues.md
+create    schedule.ics
+create    agenda.html
 create    report.md
 create    audit.jsonl
 No files written.
 ```
 
-The trust model for the planned certificate step is intentionally limited: a
-future `VALID` result will prove only that a code appears in an organizer's
-published manifest. The recipient must obtain that manifest from a source they
-trust; eventkit will not provide a hosted trust service.
+The certificate trust model is intentionally limited: a `VALID` result proves
+only that a code appears in an organizer's published manifest. The recipient
+must obtain that manifest from a source they trust; eventkit will not provide a
+hosted trust service.
 
 ## Docker
 

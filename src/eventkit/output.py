@@ -139,6 +139,12 @@ def render_report(
         verified_items = [
             item for item in verified_items if not item.startswith("Check-in sheet")
         ]
+    if {"schedule.ics", "agenda.html"} & kept_paths:
+        verified_items = [
+            item
+            for item in verified_items
+            if not item.startswith("Schedule") and not item.startswith("Agenda")
+        ]
     if any(
         path == "manifest.json" or path.startswith("certificates/")
         for path in kept_paths
@@ -239,6 +245,8 @@ def _step_for_path(relative_path: str) -> str:
 
     if relative_path == "checkin.html":
         return "checkin"
+    if relative_path in {"schedule.ics", "agenda.html"}:
+        return "schedule"
     if relative_path == "manifest.json" or relative_path.startswith("certificates/"):
         return "certificates"
     if relative_path == "report.md":
@@ -271,6 +279,8 @@ def _input_digest(config: EventConfig) -> str:
     paths = [config.path, config.registrations_path]
     if config.attendance_path is not None:
         paths.append(config.attendance_path)
+    if config.schedule_path is not None:
+        paths.append(config.schedule_path)
     for path in paths:
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
@@ -324,6 +334,7 @@ def plan_or_write_roster(
                 relative_path != "manifest.json"
                 and not relative_path.startswith("certificates/")
                 and relative_path != "checkin.html"
+                and relative_path not in {"schedule.ics", "agenda.html"}
             ):
                 continue
             target = _safe_target(root, relative_path)

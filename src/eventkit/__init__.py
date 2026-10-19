@@ -10,6 +10,8 @@ from .checkin import (
     render_checkin_html,
     verify_checkin_html,
 )
+from .agenda import render_agenda, verify_agenda_html
+from .calendar import parse_ics, render_ics, verify_ics
 from .codes import (
     CertificateRecipient,
     CodeError,
@@ -53,6 +55,15 @@ from .output import (
     render_report,
     render_roster_csv,
 )
+from .schedule import (
+    ScheduleInputError,
+    ScheduleIssue,
+    ScheduleResult,
+    Session,
+    detect_clashes,
+    parse_schedule,
+    parse_utc_offset,
+)
 from .validate import attendees_from_csv, attendee_from_mapping, validate, validate_roster
 
 __all__ = [
@@ -79,6 +90,10 @@ __all__ = [
     "RosterRow",
     "RowStatus",
     "SecretError",
+    "ScheduleInputError",
+    "ScheduleIssue",
+    "ScheduleResult",
+    "Session",
     "attendee_from_mapping",
     "attendees_from_csv",
     "build_certificate_bundle",
@@ -88,6 +103,7 @@ __all__ = [
     "canonicalize_code",
     "certificate_filename",
     "create_manifest",
+    "detect_clashes",
     "email_domain",
     "email_domain_suggestion",
     "filter_attendance",
@@ -104,12 +120,17 @@ __all__ = [
     "normalize_institution",
     "normalize_name",
     "normalize_phone",
+    "parse_ics",
+    "parse_schedule",
+    "parse_utc_offset",
     "plan_or_write_kit",
     "plan_or_write_roster",
     "read_csv",
     "read_csv_text",
     "recipients_from_roster",
     "render_checkin_html",
+    "render_agenda",
+    "render_ics",
     "render_certificate_svg",
     "render_issues_md",
     "render_report",
@@ -118,7 +139,9 @@ __all__ = [
     "secret_from_environment",
     "validate",
     "validate_roster",
+    "verify_agenda_html",
     "verify_checkin_html",
+    "verify_ics",
     "verify",
 ]
 

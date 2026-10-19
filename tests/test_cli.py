@@ -16,6 +16,7 @@ def test_init_and_dry_run_are_safe_and_repeatable(tmp_path, capsys):
     assert main(["init", str(demo)]) == 0
     assert (demo / "event.toml").is_file()
     assert (demo / "data" / "registrations.csv").is_file()
+    assert (demo / "data" / "schedule.csv").is_file()
 
     assert main(["run", str(demo / "event.toml"), "--dry-run"]) == 0
     assert not (demo / "kit").exists()
@@ -24,11 +25,16 @@ def test_init_and_dry_run_are_safe_and_repeatable(tmp_path, capsys):
     assert main(["run", str(demo / "event.toml")]) == 0
     output = demo / "kit"
     assert {path.name for path in output.iterdir()} == {
-        "roster.csv", "issues.md", "report.md", "audit.jsonl"
+        "roster.csv",
+        "issues.md",
+        "schedule.ics",
+        "agenda.html",
+        "report.md",
+        "audit.jsonl",
     }
 
     assert main(["run", str(demo / "event.toml")]) == 0
-    assert "unchanged=4" in capsys.readouterr().out
+    assert "unchanged=6" in capsys.readouterr().out
 
 
 def test_strict_returns_one_but_still_writes_explanations(tmp_path):
@@ -86,6 +92,38 @@ def _certificate_event(
         "title = \"Certificate of Participation\"\n"
         "issue_to = \"attended\"\n"
         "manifest_names = true\n\n"
+        "[output]\n"
+        "dir = \"kit\"\n"
+        f"steps = {steps}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _schedule_event(root: Path, *, steps: str = '["roster", "schedule"]') -> Path:
+    (root / "data").mkdir(parents=True)
+    (root / "data" / "registrations.csv").write_text(
+        "name,email,phone,institution\nAda Lovelace,ada@example.com,12345678,University\n",
+        encoding="utf-8",
+    )
+    (root / "data" / "schedule.csv").write_text(
+        "start,end,title,room,speaker\n"
+        '2026-05-01 09:30,2026-05-01 10:30,"Opening <&>",Hall 1,Ada\n'
+        "2026-05-01 10:30,2026-05-01 11:00,Touching,Hall 1,Ada\n"
+        "2026-05-01 10:45,2026-05-01 11:30,Clash,Hall 1,Ada\n"
+        "bad,2026-05-01 12:00,Bad,Hall 2,Bea\n",
+        encoding="utf-8",
+    )
+    path = root / "event.toml"
+    path.write_text(
+        "[event]\n"
+        "id = \"schedule-demo\"\n"
+        "name = \"Schedule Demo\"\n"
+        "organizer = \"Campus Club\"\n"
+        "utc_offset = \"+05:30\"\n\n"
+        "[input]\n"
+        "registrations = \"data/registrations.csv\"\n"
+        "schedule = \"data/schedule.csv\"\n\n"
         "[output]\n"
         "dir = \"kit\"\n"
         f"steps = {steps}\n",
@@ -224,3 +262,77 @@ def test_checkin_step_requires_secret_before_writing(tmp_path, monkeypatch):
 
     assert main(["run", str(event)]) == 2
     assert not (tmp_path / "kit").exists()
+
+
+def test_schedule_run_writes_ics_agenda_and_reports_clashes(tmp_path, capsys):
+    event = _schedule_event(tmp_path)
+
+    assert main(["run", str(event), "--dry-run"]) == 0
+    assert not (tmp_path / "kit").exists()
+
+    assert main(["run", str(event)]) == 0
+    kit = tmp_path / "kit"
+    ics = (kit / "schedule.ics").read_bytes()
+    agenda = (kit / "agenda.html").read_text(encoding="utf-8")
+    issues = (kit / "issues.md").read_text(encoding="utf-8")
+    report = (kit / "report.md").read_text(encoding="utf-8")
+    assert b"DTSTART:20260501T040000Z" in ics
+    assert b"SUMMARY:Opening <&>" in ics
+    assert "Opening &lt;&amp;&gt;" in agenda
+    assert "Clash: SC02" in agenda
+    assert "SC01" in issues and "SC02" in issues and "SC03" in issues
+    assert "Schedule ICS parses and contains all valid sessions." in report
+    assert "Agenda HTML parses and contains all valid sessions." in report
+    assert '"step":"schedule"' in (kit / "audit.jsonl").read_text(encoding="utf-8")
+    output = capsys.readouterr().out
+    assert "schedule.ics" in output and "agenda.html" in output
+
+
+def test_schedule_strict_returns_one_for_schedule_errors(tmp_path):
+    event = _schedule_event(tmp_path)
+
+    assert main(["run", str(event), "--strict"]) == 1
+    assert (tmp_path / "kit" / "schedule.ics").is_file()
+
+
+def test_full_roster_checkin_schedule_certificate_flow_is_repeatable(tmp_path, monkeypatch):
+    event = _certificate_event(
+        tmp_path,
+        steps='["roster", "checkin", "schedule", "certificates"]',
+    )
+    (tmp_path / "data" / "schedule.csv").write_text(
+        "start,end,title,room,speaker\n"
+        "2026-05-01 09:00,2026-05-01 10:00,Opening,Hall 1,Ada\n",
+        encoding="utf-8",
+    )
+    event.write_text(
+        event.read_text(encoding="utf-8").replace(
+            'attendance = "data/attendance.csv"\n',
+            'attendance = "data/attendance.csv"\nschedule = "data/schedule.csv"\n',
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("EVENTKIT_SECRET", "certificate-test-secret")
+
+    assert main(["run", str(event), "--dry-run"]) == 0
+    assert not (tmp_path / "kit").exists()
+    assert main(["run", str(event)]) == 0
+    kit = tmp_path / "kit"
+    expected = {
+        "roster.csv",
+        "issues.md",
+        "checkin.html",
+        "schedule.ics",
+        "agenda.html",
+        "manifest.json",
+        "certificates",
+        "report.md",
+        "audit.jsonl",
+    }
+    actual = {path.name for path in kit.iterdir()}
+    assert actual == expected
+    first = {path.relative_to(kit): path.read_bytes() for path in kit.rglob("*") if path.is_file()}
+
+    assert main(["run", str(event)]) == 0
+    second = {path.relative_to(kit): path.read_bytes() for path in kit.rglob("*") if path.is_file()}
+    assert first == second

@@ -8,13 +8,16 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .agenda import render_agenda, verify_agenda_html
 from .checkin import build_checkin_file
 from .certificate_pipeline import build_certificate_bundle
+from .calendar import render_ics, verify_ics
 from .codes import manifest_from_json, verify as verify_manifest
 from .config import ConfigError, load_config
 from .csvio import read_csv
 from .model import RosterResult
 from .output import format_plan, plan_or_write_roster
+from .schedule import parse_schedule
 from .validate import validate_roster
 
 
@@ -26,6 +29,7 @@ utc_offset = "+05:30"
 
 [input]
 registrations = "data/registrations.csv"
+schedule = "data/schedule.csv"
 
 [columns]
 name = "Full Name"
@@ -35,7 +39,7 @@ institution = "College"
 
 [output]
 dir = "kit"
-steps = ["roster"]
+steps = ["roster", "schedule"]
 """
 
 _SAMPLE_REGISTRATIONS = """Full Name,Email Address,Phone,College,Notes
@@ -47,6 +51,13 @@ Exact Later,FIRST@EXAMPLE.COM,202-555-0103,Demo University,duplicate
 Phone Match,phone@example.com,202 555 0199,Demo University,possible duplicate
 Short Phone,short@example.com,123-4567,Demo University,too short
 Domain Typo,typo@gmial.com,+1 202 555 0108,Demo University,check domain
+"""
+
+_SAMPLE_SCHEDULE = """start,end,title,room,speaker
+2026-05-01 09:00,2026-05-01 10:00,Opening,Hall 1,Ada
+2026-05-01 10:00,2026-05-01 11:00,Workshop,Hall 1,Bea
+2026-05-01 10:30,2026-05-01 11:30,Room clash,Hall 1,Chris
+bad,2026-05-01 12:00,Bad time,Hall 2,
 """
 
 
@@ -88,6 +99,7 @@ def _init(directory: str) -> int:
     actions = [
         _write_if_missing(root / "event.toml", _SAMPLE_EVENT),
         _write_if_missing(root / "data" / "registrations.csv", _SAMPLE_REGISTRATIONS),
+        _write_if_missing(root / "data" / "schedule.csv", _SAMPLE_SCHEDULE),
     ]
     print("\n".join(actions))
     print(f"Next: eventkit run {root / 'event.toml'} --dry-run")
@@ -103,6 +115,40 @@ def _run(args: argparse.Namespace) -> int:
     extra_files: dict[str, bytes] = {}
     unresolved: list[str] = []
     verified: list[str] = []
+    if "schedule" in config.steps:
+        if config.schedule_path is None:
+            raise ConfigError(
+                "Schedule step is enabled but input.schedule is not configured"
+            )
+        if not config.schedule_path.is_file():
+            raise ConfigError(f"Schedule CSV not found: {config.schedule_path}")
+        schedule_result = parse_schedule(
+            read_csv(config.schedule_path),
+            config.utc_offset,
+        )
+        result = RosterResult(
+            result.rows,
+            result.issues + tuple(schedule_result.issues),
+            result.extra_columns,
+        )
+        ics_content = render_ics(
+            schedule_result,
+            config.event_id,
+            event_name=config.name,
+        )
+        agenda_content = render_agenda(schedule_result, event_name=config.name)
+        try:
+            verify_ics(ics_content, schedule_result)
+            verified.append("Schedule ICS parses and contains all valid sessions.")
+        except ValueError as exc:
+            unresolved.append(f"Schedule ICS post-check failed: {exc}")
+        try:
+            verify_agenda_html(agenda_content, schedule_result)
+            verified.append("Agenda HTML parses and contains all valid sessions.")
+        except ValueError as exc:
+            unresolved.append(f"Agenda HTML post-check failed: {exc}")
+        extra_files["schedule.ics"] = ics_content
+        extra_files["agenda.html"] = agenda_content
     if "checkin" in config.steps:
         checkin_content, _, checkin_verified = build_checkin_file(
             config.event_id,

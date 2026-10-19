@@ -23,6 +23,7 @@ class EventConfig:
     utc_offset: str
     registrations_path: Path
     attendance_path: Path | None
+    schedule_path: Path | None
     columns: dict[str, str]
     output_dir: Path
     steps: tuple[str, ...]
@@ -84,11 +85,11 @@ def load_config(path: str | Path) -> EventConfig:
     if not isinstance(steps_value, list) or not all(isinstance(step, str) for step in steps_value):
         raise ConfigError("[output].steps must be a list of strings")
     steps = tuple(step.strip().lower() for step in steps_value if step.strip())
-    unsupported = sorted(set(steps) - {"roster", "checkin", "certificates"})
+    unsupported = sorted(set(steps) - {"roster", "checkin", "schedule", "certificates"})
     if unsupported:
         joined = ", ".join(unsupported)
         raise ConfigError(
-            f"Unsupported step(s) in this build: {joined}; currently available: roster, checkin, certificates"
+            f"Unsupported step(s) in this build: {joined}; currently available: roster, checkin, schedule, certificates"
         )
     if "roster" not in steps:
         raise ConfigError("[output].steps must include 'roster' for this build")
@@ -101,6 +102,12 @@ def load_config(path: str | Path) -> EventConfig:
     attendance_path = (
         _relative_path(root, attendance_value, field="input.attendance")
         if attendance_value is not None
+        else None
+    )
+    schedule_value = inputs.get("schedule")
+    schedule_path = (
+        _relative_path(root, schedule_value, field="input.schedule")
+        if schedule_value is not None
         else None
     )
     output_dir = _relative_path(root, output.get("dir", "kit"), field="output.dir")
@@ -135,6 +142,7 @@ def load_config(path: str | Path) -> EventConfig:
         utc_offset=_text(event.get("utc_offset", "+00:00"), field="event.utc_offset", required=False) or "+00:00",
         registrations_path=registration_path,
         attendance_path=attendance_path,
+        schedule_path=schedule_path,
         columns=normalized_columns,
         output_dir=output_dir,
         steps=steps,
