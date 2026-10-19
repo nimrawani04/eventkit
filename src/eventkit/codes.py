@@ -196,7 +196,7 @@ certificate_code = generate_certificate_code
 
 
 def _code_conflicts(candidate: str, existing: set[str]) -> bool:
-    """Detect an exact code collision or a candidate prefix of an existing code."""
+    """Detect an exact code collision or a short candidate prefix collision."""
 
     return any(
         candidate == value
@@ -222,9 +222,25 @@ def generate_checkin_code(
 
     existing = {canonicalize_code(value) for value in used_codes}
     digest = _hmac_digest("checkin", event_id, email, role, secret)
+    # Six characters are enough for normal use, but collision extension may
+    # need more than the 256 bits in one digest.  Extend the deterministic
+    # bit stream with keyed blocks derived from that digest rather than
+    # truncating, looping forever, or introducing randomness.
+    stream = bytearray(digest)
+    key = validate_secret(secret).encode("utf-8")
+    extension = 0
     length = 6
     while True:
-        candidate = _crockford_prefix(digest, length)
+        while length * 5 > len(stream) * 8:
+            stream.extend(
+                hmac.new(
+                    key,
+                    digest + extension.to_bytes(4, "big"),
+                    hashlib.sha256,
+                ).digest()
+            )
+            extension += 1
+        candidate = _crockford_prefix(bytes(stream), length)
         if not _code_conflicts(candidate, existing):
             return candidate
         length += 1

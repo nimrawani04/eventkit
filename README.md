@@ -16,6 +16,7 @@ The first buildable slice implements the PRD's roster milestone:
 - safe output handling that keeps files edited outside eventkit's audit record.
 - deterministic attendance-filtered certificate SVGs, a privacy-preserving
   `manifest.json`, and offline `verify`.
+- deterministic printable `checkin.html` with stable check-in codes.
 
 Schedule, email drafts, and `clean` are planned PRD slices and are intentionally
 not claimed as implemented yet.
@@ -100,6 +101,22 @@ and SHA-256 hashes of canonical codes; it never stores email addresses. A
 `VALID` result proves only that the code is present in the manifest supplied to
 `verify`. Recipients must obtain that manifest from an organizer or another
 source they trust.
+
+## Printable check-in sheet
+
+Add `checkin` to the output steps:
+
+```toml
+[output]
+dir = "kit"
+steps = ["roster", "checkin", "certificates"]
+```
+
+With `EVENTKIT_SECRET` set, `eventkit run` writes `kit/checkin.html`. It omits
+excluded registrations, sorts included attendees by normalized name and stable
+check-in code, and includes a print stylesheet with a number, name,
+institution, check-in code, and tick box. The HTML is deterministic and all
+dynamic attendee text is escaped.
 
 ## Tests
 

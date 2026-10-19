@@ -134,11 +134,21 @@ def render_report(
                 "- Roster and issue output is deterministic for the same inputs.",
             )
         )
-    if not any(
+    verified_items = list(verified)
+    if "checkin.html" in kept_paths:
+        verified_items = [
+            item for item in verified_items if not item.startswith("Check-in sheet")
+        ]
+    if any(
         path == "manifest.json" or path.startswith("certificates/")
         for path in kept_paths
     ):
-        lines.extend(f"- {item}" for item in verified)
+        verified_items = [
+            item
+            for item in verified_items
+            if not item.startswith("Every generated certificate")
+        ]
+    lines.extend(f"- {item}" for item in verified_items)
     lines.extend(("", "## Unresolved", ""))
     if unresolved_items:
         lines.extend(f"- {item}" for item in unresolved_items)
@@ -224,6 +234,18 @@ def _file_action(
     return FileAction(relative_path, action, len(content), digest, step)
 
 
+def _step_for_path(relative_path: str) -> str:
+    """Map generated file paths to their pipeline step for the audit log."""
+
+    if relative_path == "checkin.html":
+        return "checkin"
+    if relative_path == "manifest.json" or relative_path.startswith("certificates/"):
+        return "certificates"
+    if relative_path == "report.md":
+        return "report"
+    return "roster"
+
+
 def _audit_bytes(input_digest: str, files: Iterable[FileAction]) -> bytes:
     records = [{"input_digest": input_digest}]
     records.extend(
@@ -231,7 +253,7 @@ def _audit_bytes(input_digest: str, files: Iterable[FileAction]) -> bytes:
             "path": item.relative_path,
             "sha256": item.sha256,
             "size": item.size,
-            "step": "roster",
+            "step": item.step,
         }
         for item in files
         if item.relative_path != "audit.jsonl" and item.action != "delete"
@@ -288,7 +310,7 @@ def plan_or_write_roster(
             name,
             content,
             previous_hashes,
-            step="certificates" if name == "manifest.json" or name.startswith("certificates/") else "roster",
+            step=_step_for_path(name),
         )
         for name, content in file_contents.items()
     )
@@ -298,7 +320,11 @@ def plan_or_write_roster(
         for relative_path, previous_hash in sorted(previous_hashes.items()):
             if relative_path in current_paths or relative_path == "audit.jsonl":
                 continue
-            if relative_path != "manifest.json" and not relative_path.startswith("certificates/"):
+            if (
+                relative_path != "manifest.json"
+                and not relative_path.startswith("certificates/")
+                and relative_path != "checkin.html"
+            ):
                 continue
             target = _safe_target(root, relative_path)
             if not target.exists():
@@ -306,7 +332,13 @@ def plan_or_write_roster(
             current_digest = _sha256(target.read_bytes())
             action = "delete" if current_digest == previous_hash else "keep"
             stale_actions.append(
-                FileAction(relative_path, action, target.stat().st_size, previous_hash, "certificates")
+                FileAction(
+                    relative_path,
+                    action,
+                    target.stat().st_size,
+                    previous_hash,
+                    _step_for_path(relative_path),
+                )
             )
     report_unresolved = list(extra_unresolved)
     report_unresolved.extend(
@@ -332,7 +364,7 @@ def plan_or_write_roster(
             name,
             content,
             previous_hashes,
-            step="certificates" if name == "manifest.json" or name.startswith("certificates/") else "roster",
+            step=_step_for_path(name),
         )
         for name, content in file_contents.items()
     )

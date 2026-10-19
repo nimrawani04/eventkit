@@ -54,7 +54,12 @@ def test_edited_output_is_kept_and_reported(tmp_path, capsys):
     assert roster.read_text(encoding="utf-8") == "edited by organizer\n"
 
 
-def _certificate_event(root: Path, *, attendance: bool = True) -> Path:
+def _certificate_event(
+    root: Path,
+    *,
+    attendance: bool = True,
+    steps: str = '["roster", "certificates"]',
+) -> Path:
     (root / "data").mkdir(parents=True)
     (root / "data" / "registrations.csv").write_text(
         "name,email,phone,institution\n"
@@ -83,7 +88,7 @@ def _certificate_event(root: Path, *, attendance: bool = True) -> Path:
         "manifest_names = true\n\n"
         "[output]\n"
         "dir = \"kit\"\n"
-        "steps = [\"roster\", \"certificates\"]\n",
+        f"steps = {steps}\n",
         encoding="utf-8",
     )
     return path
@@ -189,3 +194,33 @@ def test_stale_unchanged_certificate_is_removed_safely(tmp_path, monkeypatch):
     )
     assert main(["run", str(event)]) == 0
     assert not list((tmp_path / "kit" / "certificates").glob("*.svg"))
+
+
+def test_checkin_and_certificate_steps_work_together_end_to_end(tmp_path, monkeypatch):
+    event = _certificate_event(
+        tmp_path,
+        steps='["roster", "checkin", "certificates"]',
+    )
+    monkeypatch.setenv("EVENTKIT_SECRET", "certificate-test-secret")
+
+    assert main(["run", str(event), "--dry-run"]) == 0
+    assert not (tmp_path / "kit").exists()
+    assert main(["run", str(event)]) == 0
+    kit = tmp_path / "kit"
+    checkin = (kit / "checkin.html").read_text(encoding="utf-8")
+    assert "Ada Lovelace" in checkin
+    assert "excluded@example.com" not in checkin
+    assert "@media print" in checkin
+    audit = (kit / "audit.jsonl").read_text(encoding="utf-8")
+    assert '"step":"checkin"' in audit
+    assert '"step":"certificates"' in audit
+    report = (kit / "report.md").read_text(encoding="utf-8")
+    assert "Check-in sheet parses and matches the included roster." in report
+
+
+def test_checkin_step_requires_secret_before_writing(tmp_path, monkeypatch):
+    event = _certificate_event(tmp_path, steps='["roster", "checkin"]')
+    monkeypatch.delenv("EVENTKIT_SECRET", raising=False)
+
+    assert main(["run", str(event)]) == 2
+    assert not (tmp_path / "kit").exists()

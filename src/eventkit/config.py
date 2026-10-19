@@ -84,11 +84,11 @@ def load_config(path: str | Path) -> EventConfig:
     if not isinstance(steps_value, list) or not all(isinstance(step, str) for step in steps_value):
         raise ConfigError("[output].steps must be a list of strings")
     steps = tuple(step.strip().lower() for step in steps_value if step.strip())
-    unsupported = sorted(set(steps) - {"roster", "certificates"})
+    unsupported = sorted(set(steps) - {"roster", "checkin", "certificates"})
     if unsupported:
         joined = ", ".join(unsupported)
         raise ConfigError(
-            f"Unsupported step(s) in this build: {joined}; currently available: roster, certificates"
+            f"Unsupported step(s) in this build: {joined}; currently available: roster, checkin, certificates"
         )
     if "roster" not in steps:
         raise ConfigError("[output].steps must include 'roster' for this build")

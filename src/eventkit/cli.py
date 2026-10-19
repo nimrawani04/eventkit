@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .checkin import build_checkin_file
 from .certificate_pipeline import build_certificate_bundle
 from .codes import manifest_from_json, verify as verify_manifest
 from .config import ConfigError, load_config
@@ -99,9 +100,17 @@ def _run(args: argparse.Namespace) -> int:
         raise ConfigError(f"Registration CSV not found: {config.registrations_path}")
     table = read_csv(config.registrations_path)
     result = validate_roster(table, columns=config.columns)
-    certificate_files: dict[str, bytes] = {}
+    extra_files: dict[str, bytes] = {}
     unresolved: list[str] = []
     verified: list[str] = []
+    if "checkin" in config.steps:
+        checkin_content, _, checkin_verified = build_checkin_file(
+            config.event_id,
+            config.name,
+            result,
+        )
+        extra_files["checkin.html"] = checkin_content
+        verified.append(checkin_verified)
     if "certificates" in config.steps:
         attendance_table = None
         if config.attendance_path is not None:
@@ -113,7 +122,7 @@ def _run(args: argparse.Namespace) -> int:
             result,
             attendance_table=attendance_table,
         )
-        certificate_files = bundle.files
+        extra_files.update(bundle.files)
         if bundle.skipped_reason:
             unresolved.append(bundle.skipped_reason)
         unresolved.extend(bundle.verification_issues)
@@ -129,7 +138,7 @@ def _run(args: argparse.Namespace) -> int:
         result,
         dry_run=args.dry_run,
         output_dir=args.out,
-        extra_files=certificate_files,
+        extra_files=extra_files,
         extra_unresolved=unresolved,
         extra_verified=verified,
     )

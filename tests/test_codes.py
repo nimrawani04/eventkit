@@ -78,13 +78,15 @@ def test_canonicalization_handles_case_formatting_and_ambiguous_characters():
 
 def test_checkin_codes_are_unique_and_lengthen_on_collision():
     recipient = CertificateRecipient("person@example.com", "attendee")
-    codes = generate_checkin_codes("campus-2026", [recipient, recipient], SECRET)
+    codes = generate_checkin_codes("campus-2026", [recipient, recipient, recipient], SECRET)
 
-    assert len(codes) == 2
+    assert len(codes) == 3
     assert len(codes[0]) == 6
     assert len(codes[1]) == 7
-    assert len(set(codes)) == 2
+    assert len(codes[2]) == 8
+    assert len(set(codes)) == 3
     assert codes[1].startswith(codes[0])
+    assert codes[2].startswith(codes[1])
 
 
 def test_manifest_is_private_and_json_is_deterministic():

@@ -3,6 +3,13 @@
 from .attendance import AttendanceResult, filter_attendance, recipients_from_roster
 from .certificate_pipeline import CertificateBundle, build_certificate_bundle
 from .certificates import certificate_filename, render_certificate_svg, safe_filename_slug
+from .checkin import (
+    CheckinEntry,
+    build_checkin_entries,
+    build_checkin_file,
+    render_checkin_html,
+    verify_checkin_html,
+)
 from .codes import (
     CertificateRecipient,
     CodeError,
@@ -53,6 +60,7 @@ __all__ = [
     "AttendanceResult",
     "CertificateBundle",
     "CertificateRecipient",
+    "CheckinEntry",
     "CodeError",
     "COMMON_EMAIL_DOMAINS",
     "ConfigError",
@@ -74,6 +82,8 @@ __all__ = [
     "attendee_from_mapping",
     "attendees_from_csv",
     "build_certificate_bundle",
+    "build_checkin_entries",
+    "build_checkin_file",
     "canonical_code_sha256",
     "canonicalize_code",
     "certificate_filename",
@@ -99,6 +109,7 @@ __all__ = [
     "read_csv",
     "read_csv_text",
     "recipients_from_roster",
+    "render_checkin_html",
     "render_certificate_svg",
     "render_issues_md",
     "render_report",
@@ -107,6 +118,7 @@ __all__ = [
     "secret_from_environment",
     "validate",
     "validate_roster",
+    "verify_checkin_html",
     "verify",
 ]
 
