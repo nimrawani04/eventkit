@@ -1,21 +1,29 @@
-"""Core data handling for eventkit.
+"""Reusable eventkit data, certificate, and output helpers."""
 
-The package currently contains the reusable roster-ingestion pieces.  The
-command-line interface and file writers are intentionally left for later
-milestones.
-"""
-
+from .attendance import AttendanceResult, filter_attendance, recipients_from_roster
+from .certificate_pipeline import CertificateBundle, build_certificate_bundle
+from .certificates import certificate_filename, render_certificate_svg, safe_filename_slug
+from .codes import (
+    CertificateRecipient,
+    CodeError,
+    IssuedCertificate,
+    Manifest,
+    ManifestCertificate,
+    ManifestError,
+    SecretError,
+    canonical_code_sha256,
+    canonicalize_code,
+    create_manifest,
+    generate_certificate_code,
+    generate_checkin_code,
+    manifest_from_json,
+    manifest_to_json,
+    secret_from_environment,
+    verify,
+)
 from .config import ConfigError, EventConfig, load_config
 from .csvio import CsvRow, CsvTable, read_csv, read_csv_text
-from .output import FileAction, OutputResult, format_plan, plan_or_write_roster, render_issues_md, render_report, render_roster_csv
-from .model import (
-    Attendee,
-    Issue,
-    IssueLevel,
-    RosterResult,
-    RosterRow,
-    RowStatus,
-)
+from .model import Attendee, Issue, IssueLevel, RosterResult, RosterRow, RowStatus
 from .normalize import (
     COMMON_EMAIL_DOMAINS,
     email_domain,
@@ -28,48 +36,78 @@ from .normalize import (
     normalize_name,
     normalize_phone,
 )
-from .validate import (
-    attendees_from_csv,
-    attendee_from_mapping,
-    validate,
-    validate_roster,
+from .output import (
+    FileAction,
+    OutputResult,
+    format_plan,
+    plan_or_write_kit,
+    plan_or_write_roster,
+    render_issues_md,
+    render_report,
+    render_roster_csv,
 )
+from .validate import attendees_from_csv, attendee_from_mapping, validate, validate_roster
 
 __all__ = [
     "Attendee",
+    "AttendanceResult",
+    "CertificateBundle",
+    "CertificateRecipient",
+    "CodeError",
     "COMMON_EMAIL_DOMAINS",
     "ConfigError",
     "CsvRow",
     "CsvTable",
     "EventConfig",
     "FileAction",
+    "IssuedCertificate",
     "Issue",
     "IssueLevel",
+    "Manifest",
+    "ManifestCertificate",
+    "ManifestError",
     "OutputResult",
     "RosterResult",
     "RosterRow",
     "RowStatus",
+    "SecretError",
     "attendee_from_mapping",
     "attendees_from_csv",
+    "build_certificate_bundle",
+    "canonical_code_sha256",
+    "canonicalize_code",
+    "certificate_filename",
+    "create_manifest",
     "email_domain",
     "email_domain_suggestion",
+    "filter_attendance",
+    "format_plan",
+    "generate_certificate_code",
+    "generate_checkin_code",
     "is_valid_email",
     "likely_common_domain_typo",
+    "load_config",
+    "manifest_from_json",
+    "manifest_to_json",
     "normalize_attendee",
     "normalize_email",
     "normalize_institution",
     "normalize_name",
     "normalize_phone",
-    "format_plan",
-    "load_config",
+    "plan_or_write_kit",
     "plan_or_write_roster",
+    "read_csv",
+    "read_csv_text",
+    "recipients_from_roster",
+    "render_certificate_svg",
     "render_issues_md",
     "render_report",
     "render_roster_csv",
-    "read_csv",
-    "read_csv_text",
+    "safe_filename_slug",
+    "secret_from_environment",
     "validate",
     "validate_roster",
+    "verify",
 ]
 
 __version__ = "0.1.0"

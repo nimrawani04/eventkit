@@ -8,8 +8,11 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .certificate_pipeline import build_certificate_bundle
+from .codes import manifest_from_json, verify as verify_manifest
 from .config import ConfigError, load_config
 from .csvio import read_csv
+from .model import RosterResult
 from .output import format_plan, plan_or_write_roster
 from .validate import validate_roster
 
@@ -63,6 +66,10 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--strict", action="store_true", help="return 1 when error-level issues exist")
     run.add_argument("--out", help="override the output directory")
 
+    verify = subparsers.add_parser("verify", help="verify a certificate code offline")
+    verify.add_argument("code", help="certificate code to verify")
+    verify.add_argument("--manifest", required=True, help="path to manifest.json")
+
     return parser
 
 
@@ -92,11 +99,39 @@ def _run(args: argparse.Namespace) -> int:
         raise ConfigError(f"Registration CSV not found: {config.registrations_path}")
     table = read_csv(config.registrations_path)
     result = validate_roster(table, columns=config.columns)
+    certificate_files: dict[str, bytes] = {}
+    unresolved: list[str] = []
+    verified: list[str] = []
+    if "certificates" in config.steps:
+        attendance_table = None
+        if config.attendance_path is not None:
+            if not config.attendance_path.is_file():
+                raise ConfigError(f"Attendance CSV not found: {config.attendance_path}")
+            attendance_table = read_csv(config.attendance_path)
+        bundle = build_certificate_bundle(
+            config,
+            result,
+            attendance_table=attendance_table,
+        )
+        certificate_files = bundle.files
+        if bundle.skipped_reason:
+            unresolved.append(bundle.skipped_reason)
+        unresolved.extend(bundle.verification_issues)
+        verified.extend(bundle.verified)
+        if bundle.attendance is not None and bundle.attendance.issues:
+            result = RosterResult(
+                result.rows,
+                result.issues + bundle.attendance.issues,
+                result.extra_columns,
+            )
     output = plan_or_write_roster(
         config,
         result,
         dry_run=args.dry_run,
         output_dir=args.out,
+        extra_files=certificate_files,
+        extra_unresolved=unresolved,
+        extra_verified=verified,
     )
     mode = "Dry run" if args.dry_run else "Run"
     print(
@@ -113,6 +148,25 @@ def _run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _verify(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest).expanduser().resolve()
+    try:
+        manifest = manifest_from_json(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError) as exc:
+        raise ConfigError(f"Could not read manifest {args.manifest}: {exc}") from exc
+    result = verify_manifest(args.code, manifest)
+    if not result.valid:
+        print("INVALID")
+        return 1
+    print("VALID")
+    print(f"Event: {result.event_name} ({result.event_id})")
+    if result.role is not None:
+        print(f"Role: {result.role}")
+    if result.name is not None:
+        print(f"Name: {result.name}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -121,8 +175,10 @@ def main(argv: list[str] | None = None) -> int:
             return _init(args.dir)
         if args.command == "run":
             return _run(args)
+        if args.command == "verify":
+            return _verify(args)
         parser.print_help()
-        return 0
+        return 2
     except (ConfigError, FileNotFoundError, OSError, UnicodeError, ValueError, csv.Error) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

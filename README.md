@@ -14,9 +14,11 @@ The first buildable slice implements the PRD's roster milestone:
 - deterministic `roster.csv`, `issues.md`, `report.md`, and `audit.jsonl` output;
 - `init`, `run`, `--dry-run`, `--strict`, and `--version`;
 - safe output handling that keeps files edited outside eventkit's audit record.
+- deterministic attendance-filtered certificate SVGs, a privacy-preserving
+  `manifest.json`, and offline `verify`.
 
-Schedule, certificates, email drafts, offline verification, and `clean` are
-planned PRD slices and are intentionally not claimed as implemented yet.
+Schedule, email drafts, and `clean` are planned PRD slices and are intentionally
+not claimed as implemented yet.
 
 ## Requirements
 
@@ -33,8 +35,8 @@ python3.12 -m venv .venv
 ```
 
 On Windows, use the equivalent `.venv\Scripts\python` paths. Do not put a real
-`EVENTKIT_SECRET` in the repository; `.env.example` is only a placeholder for
-the later certificate step.
+`EVENTKIT_SECRET` in the repository; `.env.example` is only a placeholder. The
+secret must be supplied in the environment and must be at least 16 characters.
 
 ## Quickstart
 
@@ -58,6 +60,46 @@ listing each issue with its source row number in `issues.md`.
 The output writer records content hashes in `audit.jsonl`. A rerun with
 unchanged inputs is deterministic; a file changed by an organizer is kept
 instead of being overwritten.
+
+## Certificates and offline verification
+
+Enable the certificate step in `event.toml`:
+
+```toml
+[input]
+registrations = "data/registrations.csv"
+attendance = "data/attendance.csv"
+
+[certificates]
+title = "Certificate of Participation"
+issue_to = "attended"
+manifest_names = true
+
+[output]
+dir = "kit"
+steps = ["roster", "certificates"]
+```
+
+The attendance CSV requires `email` and may include `role`; missing roles use
+`Participant`. Unknown attendance emails and emails matching excluded roster
+rows receive EK07 and do not get certificates. When `issue_to = "attended"`
+and no attendance file is configured, the certificate step is skipped and the
+reason is recorded in `report.md`.
+
+Run with a secret supplied only by the environment:
+
+```sh
+export EVENTKIT_SECRET='replace-with-a-local-secret-at-least-16-chars'
+eventkit run event.toml
+eventkit verify ABCD-1234-EFGH --manifest kit/manifest.json
+```
+
+Certificates are written under `kit/certificates/` as deterministic A4
+landscape SVG files. The manifest stores event metadata, roles, optional names,
+and SHA-256 hashes of canonical codes; it never stores email addresses. A
+`VALID` result proves only that the code is present in the manifest supplied to
+`verify`. Recipients must obtain that manifest from an organizer or another
+source they trust.
 
 ## Tests
 

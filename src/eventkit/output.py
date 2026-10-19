@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import hmac
 import io
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Iterable
 
 from .config import EventConfig
@@ -22,6 +24,7 @@ class FileAction:
     action: str
     size: int
     sha256: str
+    step: str = "roster"
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +102,7 @@ def render_report(
     result: RosterResult,
     actions: Iterable[FileAction],
     unresolved: Iterable[str],
+    verified: Iterable[str] = (),
 ) -> bytes:
     """Render the first-slice report with explicit verified/unresolved parts."""
 
@@ -116,17 +120,26 @@ def render_report(
         f"- Rows excluded: {len(result.excluded_rows)}",
         f"- Errors: {errors}",
         f"- Warnings: {warnings}",
-        f"- Files planned: {len(actions) + 1}",
+        f"- Files planned: {len(actions) + 2}",
         "",
         "## Verified",
         "",
-        "- Registration CSV was read with BOM-safe, physical-line tracking.",
-        "- Every source row is represented in the generated roster.",
-        "- Roster and issue output is deterministic for the same inputs.",
-        "",
-        "## Unresolved",
-        "",
     ]
+    kept_paths = {item.relative_path for item in actions if item.action == "keep"}
+    if not ({"roster.csv", "issues.md"} & kept_paths):
+        lines.extend(
+            (
+                "- Registration CSV was read with BOM-safe, physical-line tracking.",
+                "- Every source row is represented in the generated roster.",
+                "- Roster and issue output is deterministic for the same inputs.",
+            )
+        )
+    if not any(
+        path == "manifest.json" or path.startswith("certificates/")
+        for path in kept_paths
+    ):
+        lines.extend(f"- {item}" for item in verified)
+    lines.extend(("", "## Unresolved", ""))
     if unresolved_items:
         lines.extend(f"- {item}" for item in unresolved_items)
     elif result.issues:
@@ -137,20 +150,50 @@ def render_report(
     return "\n".join(lines).encode("utf-8")
 
 
-def _read_audit(path: Path) -> dict[str, str]:
-    """Read prior file hashes; malformed audit data means no ownership."""
+def _safe_target(root: Path, relative_path: str) -> Path:
+    """Return an output target only when no path component is a symlink."""
+
+    path = Path(relative_path)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"Output path escapes the output directory: {relative_path}")
+    target = root / path
+    current = root
+    for part in path.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f"Output path contains a symlink: {relative_path}")
+    try:
+        target.resolve(strict=False).relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError(f"Output path escapes the output directory: {relative_path}") from exc
+    return target
+
+
+def _read_audit(path: Path) -> tuple[dict[str, str], bool]:
+    """Read prior file hashes and validate the audit record checksum."""
 
     if not path.is_file():
-        return {}
+        return {}, False
     records: dict[str, str] = {}
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            value = json.loads(line)
+        values = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        if not values or not isinstance(values[-1], dict):
+            return {}, False
+        checksum = values[-1].get("audit_sha256")
+        if not isinstance(checksum, str):
+            return {}, False
+        prefix = "".join(
+            json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+            for value in values[:-1]
+        ).encode("utf-8")
+        if not hmac.compare_digest(hashlib.sha256(prefix).hexdigest(), checksum):
+            return {}, False
+        for value in values[:-1]:
             if isinstance(value, dict) and isinstance(value.get("path"), str) and isinstance(value.get("sha256"), str):
                 records[value["path"]] = value["sha256"]
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return {}
-    return records
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        return {}, False
+    return records, True
 
 
 def _file_action(
@@ -158,8 +201,10 @@ def _file_action(
     relative_path: str,
     content: bytes,
     previous_hashes: dict[str, str],
+    *,
+    step: str = "roster",
 ) -> FileAction:
-    target = output_dir / relative_path
+    target = _safe_target(output_dir, relative_path)
     digest = _sha256(content)
     if not target.exists():
         action = "create"
@@ -176,7 +221,7 @@ def _file_action(
                 action = "update"
             else:
                 action = "keep"
-    return FileAction(relative_path, action, len(content), digest)
+    return FileAction(relative_path, action, len(content), digest, step)
 
 
 def _audit_bytes(input_digest: str, files: Iterable[FileAction]) -> bytes:
@@ -189,20 +234,26 @@ def _audit_bytes(input_digest: str, files: Iterable[FileAction]) -> bytes:
             "step": "roster",
         }
         for item in files
-        if item.relative_path != "audit.jsonl"
+        if item.relative_path != "audit.jsonl" and item.action != "delete"
     )
-    return "".join(
+    prefix = "".join(
         json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
         for record in records
     ).encode("utf-8")
+    checksum = hashlib.sha256(prefix).hexdigest()
+    return prefix + (json.dumps({"audit_sha256": checksum}, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
 def _input_digest(config: EventConfig) -> str:
     digest = hashlib.sha256()
-    for path in (config.path, config.registrations_path):
+    paths = [config.path, config.registrations_path]
+    if config.attendance_path is not None:
+        paths.append(config.attendance_path)
+    for path in paths:
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        if path.is_file():
+            digest.update(path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
 
@@ -213,30 +264,79 @@ def plan_or_write_roster(
     *,
     dry_run: bool = False,
     output_dir: str | Path | None = None,
+    extra_files: Mapping[str, bytes] | None = None,
+    extra_unresolved: Iterable[str] = (),
+    extra_verified: Iterable[str] = (),
 ) -> OutputResult:
-    """Plan or write roster files using deterministic ownership checks."""
+    """Plan or write roster files and optional pipeline-step files."""
 
     root = (Path(output_dir) if output_dir is not None else config.output_dir).expanduser().resolve()
-    previous_hashes = _read_audit(root / "audit.jsonl")
+    _safe_target(root, "audit.jsonl")
+    previous_hashes, audit_owned = _read_audit(root / "audit.jsonl")
     file_contents = {
         "roster.csv": render_roster_csv(result),
         "issues.md": render_issues_md(result),
     }
+    for relative_path, content in (extra_files or {}).items():
+        _safe_target(root, relative_path)
+        if not isinstance(content, bytes):
+            raise TypeError(f"Output content must be bytes: {relative_path}")
+        file_contents[relative_path] = content
     first_actions = tuple(
-        _file_action(root, name, content, previous_hashes)
+        _file_action(
+            root,
+            name,
+            content,
+            previous_hashes,
+            step="certificates" if name == "manifest.json" or name.startswith("certificates/") else "roster",
+        )
         for name, content in file_contents.items()
     )
-    report_unresolved = [
+    current_paths = set(file_contents)
+    stale_actions: list[FileAction] = []
+    if audit_owned:
+        for relative_path, previous_hash in sorted(previous_hashes.items()):
+            if relative_path in current_paths or relative_path == "audit.jsonl":
+                continue
+            if relative_path != "manifest.json" and not relative_path.startswith("certificates/"):
+                continue
+            target = _safe_target(root, relative_path)
+            if not target.exists():
+                continue
+            current_digest = _sha256(target.read_bytes())
+            action = "delete" if current_digest == previous_hash else "keep"
+            stale_actions.append(
+                FileAction(relative_path, action, target.stat().st_size, previous_hash, "certificates")
+            )
+    report_unresolved = list(extra_unresolved)
+    report_unresolved.extend(
         f"Output file kept because it was edited or not owned: {item.relative_path}"
         for item in first_actions
         if item.action == "keep"
-    ]
-    report_content = render_report(result, first_actions, report_unresolved)
+    )
+    report_unresolved.extend(
+        f"Generated file kept because it was edited: {item.relative_path}"
+        for item in stale_actions
+        if item.action == "keep"
+    )
+    report_content = render_report(
+        result,
+        first_actions + tuple(stale_actions),
+        report_unresolved,
+        extra_verified,
+    )
     file_contents["report.md"] = report_content
     actions = list(
-        _file_action(root, name, content, previous_hashes)
+        _file_action(
+            root,
+            name,
+            content,
+            previous_hashes,
+            step="certificates" if name == "manifest.json" or name.startswith("certificates/") else "roster",
+        )
         for name, content in file_contents.items()
     )
+    actions.extend(stale_actions)
     audit_content = _audit_bytes(_input_digest(config), actions)
     audit_path = root / "audit.jsonl"
     audit_digest = _sha256(audit_content)
@@ -249,16 +349,11 @@ def plan_or_write_roster(
             current_audit_digest = ""
         if current_audit_digest == audit_digest:
             audit_operation = "unchanged"
-        elif previous_hashes:
+        elif audit_owned:
             audit_operation = "update"
         else:
             audit_operation = "keep"
-    audit_action = FileAction(
-        "audit.jsonl",
-        audit_operation,
-        len(audit_content),
-        audit_digest,
-    )
+    audit_action = FileAction("audit.jsonl", audit_operation, len(audit_content), audit_digest, "audit")
     actions.append(audit_action)
 
     unresolved = list(report_unresolved)
@@ -273,11 +368,14 @@ def plan_or_write_roster(
         for relative_path, content in file_contents.items():
             action = next(item.action for item in actions if item.relative_path == relative_path)
             if action in {"create", "update"}:
-                target = root / relative_path
+                target = _safe_target(root, relative_path)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
+        for item in actions:
+            if item.action == "delete":
+                _safe_target(root, item.relative_path).unlink()
         if audit_action.action in {"create", "update"}:
-            (root / "audit.jsonl").write_bytes(audit_content)
+            _safe_target(root, "audit.jsonl").write_bytes(audit_content)
 
     return OutputResult(root, tuple(actions), tuple(dict.fromkeys(unresolved)))
 
@@ -296,3 +394,8 @@ def format_plan(output: OutputResult) -> str:
     for item in output.unresolved:
         lines.append(f"Unresolved: {item}")
     return "\n".join(lines)
+
+
+# The name reflects that the writer now accepts files from multiple pipeline
+# steps while retaining the original public roster helper.
+plan_or_write_kit = plan_or_write_roster
