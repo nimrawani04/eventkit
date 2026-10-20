@@ -18,9 +18,11 @@ The first buildable slice implements the PRD's roster milestone:
   `manifest.json`, and offline `verify`.
 - deterministic printable `checkin.html` with stable check-in codes.
 - deterministic UTC `schedule.ics` and grouped, clash-marked `agenda.html`.
+- deterministic unsent `emails/*.eml` drafts and `mailmerge.csv`.
+- safe `clean`, privacy-safe `diff`, `risk.md`, and an offline `verify.html` page.
 
-Email drafts and `clean` are planned PRD slices and are intentionally not
-claimed as implemented yet.
+The hosted/web UI and network delivery are intentionally not part of the
+project: eventkit writes local artifacts only.
 
 ## Requirements
 
@@ -103,6 +105,9 @@ and SHA-256 hashes of canonical codes; it never stores email addresses. A
 `verify`. Recipients must obtain that manifest from an organizer or another
 source they trust.
 
+The run also writes `kit/verify.html`, a self-contained browser page that
+checks the public manifest locally with Web Crypto. It makes no network calls.
+
 ## Schedule, calendar, and agenda
 
 Enable the schedule step and provide a schedule CSV with `start`, `end`,
@@ -144,6 +149,56 @@ check-in code, and includes a print stylesheet with a number, name,
 institution, check-in code, and tick box. The HTML is deterministic and all
 dynamic attendee text is escaped.
 
+## Email drafts
+
+Add `emails` after `certificates` to create drafts without sending anything:
+
+```toml
+[output]
+steps = ["roster", "checkin", "schedule", "certificates", "emails"]
+
+[emails]
+subject = "Your {event} certificate"
+text = "Hello {name},\\n\\nYour code is {code}."
+html = "<p>Hello {name},</p><p>Your code is <strong>{code}</strong>.</p>"
+```
+
+The supported template fields are `{name}`, `{event}`, and `{code}`. Each
+draft has `X-Unsent: 1`, no `Date` header, deterministic MIME boundaries, and
+the matching SVG certificate attached when available. `mailmerge.csv` contains
+metadata only; eventkit never sends mail.
+
+## Clean, risk, and impact preview
+
+Remove only unchanged files eventkit owns:
+
+```sh
+eventkit clean event.toml --dry-run
+eventkit clean event.toml
+```
+
+Edited, unowned, malformed-audit, and symlinked files are kept and reported.
+
+Preview registration changes before another run:
+
+```sh
+eventkit diff event.toml
+eventkit diff event.toml --include-names
+```
+
+The default preview uses stable pseudonymous IDs and never renders email
+addresses. Every normal run also creates `risk.md`, a deterministic summary of
+roster errors, schedule clashes, attendance mismatches, unresolved files, and
+certificate/email counts.
+
+For a complete local demo, initialize the full pipeline:
+
+```sh
+eventkit init demo-full --full
+EVENTKIT_SECRET='replace-with-a-local-secret-at-least-16-chars' \
+  eventkit run demo-full/event.toml --dry-run
+```
+
 ## Tests
 
 Run the single project check from the repository root:
@@ -173,6 +228,7 @@ create    roster.csv
 create    issues.md
 create    schedule.ics
 create    agenda.html
+create    risk.md
 create    report.md
 create    audit.jsonl
 No files written.

@@ -12,9 +12,22 @@ from .agenda import render_agenda, verify_agenda_html
 from .checkin import build_checkin_file
 from .certificate_pipeline import build_certificate_bundle
 from .calendar import render_ics, verify_ics
+from .certificates import certificate_filename
+from .clean import clean_event, format_clean_plan
 from .codes import manifest_from_json, verify as verify_manifest
 from .config import ConfigError, load_config
 from .csvio import read_csv
+from .emails import (
+    DEFAULT_HTML_TEMPLATE,
+    DEFAULT_TEXT_TEMPLATE,
+    build_email_drafts,
+    render_email_draft,
+    render_mailmerge_csv,
+    verify_email_draft,
+)
+from .impact import ImpactRun, render_impact_preview
+from .risk import render_risk_report
+from .verify_page import render_verify_page
 from .model import RosterResult
 from .output import format_plan, plan_or_write_roster
 from .schedule import parse_schedule
@@ -42,6 +55,33 @@ dir = "kit"
 steps = ["roster", "schedule"]
 """
 
+_SAMPLE_FULL_EVENT = """[event]
+id = "demo-summit-2026"
+name = "Demo Summit 2026"
+organizer = "Campus Tech Club"
+utc_offset = "+05:30"
+
+[input]
+registrations = "data/registrations.csv"
+schedule = "data/schedule.csv"
+attendance = "data/attendance.csv"
+
+[columns]
+name = "Full Name"
+email = "Email Address"
+phone = "Phone"
+institution = "College"
+
+[certificates]
+title = "Certificate of Participation"
+issue_to = "attended"
+manifest_names = true
+
+[output]
+dir = "kit"
+steps = ["roster", "checkin", "schedule", "certificates", "emails"]
+"""
+
 _SAMPLE_REGISTRATIONS = """Full Name,Email Address,Phone,College,Notes
 Alice Example,alice@example.com,+1 202 555 0100,Demo University,ready
 Missing Email,,+1 202 555 0101,Demo University,needs contact
@@ -60,6 +100,12 @@ _SAMPLE_SCHEDULE = """start,end,title,room,speaker
 bad,2026-05-01 12:00,Bad time,Hall 2,
 """
 
+_SAMPLE_ATTENDANCE = """email,role
+alice@example.com,Participant
+phone@example.com,Volunteer
+unknown@example.com,Participant
+"""
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -71,6 +117,7 @@ def _parser() -> argparse.ArgumentParser:
 
     init = subparsers.add_parser("init", help="write a sample event and deliberate CSV problems")
     init.add_argument("dir", nargs="?", default=".", help="directory to initialize")
+    init.add_argument("--full", action="store_true", help="include attendance and certificate/email steps")
 
     run = subparsers.add_parser("run", help="validate registrations and write the roster kit")
     run.add_argument("event_toml", help="path to event.toml")
@@ -81,6 +128,14 @@ def _parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify", help="verify a certificate code offline")
     verify.add_argument("code", help="certificate code to verify")
     verify.add_argument("--manifest", required=True, help="path to manifest.json")
+
+    clean = subparsers.add_parser("clean", help="safely remove unchanged generated files")
+    clean.add_argument("event_toml", help="path to event.toml")
+    clean.add_argument("--dry-run", action="store_true", help="show cleanup without deleting")
+
+    diff = subparsers.add_parser("diff", help="preview the impact of input changes")
+    diff.add_argument("event_toml", help="path to event.toml")
+    diff.add_argument("--include-names", action="store_true", help="include attendee names in the local preview")
 
     return parser
 
@@ -93,14 +148,16 @@ def _write_if_missing(path: Path, content: str) -> str:
     return f"create   {path}"
 
 
-def _init(directory: str) -> int:
+def _init(directory: str, *, full: bool = False) -> int:
     root = Path(directory).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     actions = [
-        _write_if_missing(root / "event.toml", _SAMPLE_EVENT),
+        _write_if_missing(root / "event.toml", _SAMPLE_FULL_EVENT if full else _SAMPLE_EVENT),
         _write_if_missing(root / "data" / "registrations.csv", _SAMPLE_REGISTRATIONS),
         _write_if_missing(root / "data" / "schedule.csv", _SAMPLE_SCHEDULE),
     ]
+    if full:
+        actions.append(_write_if_missing(root / "data" / "attendance.csv", _SAMPLE_ATTENDANCE))
     print("\n".join(actions))
     print(f"Next: eventkit run {root / 'event.toml'} --dry-run")
     return 0
@@ -115,6 +172,11 @@ def _run(args: argparse.Namespace) -> int:
     extra_files: dict[str, bytes] = {}
     unresolved: list[str] = []
     verified: list[str] = []
+    summary: list[str] = []
+    schedule_errors = 0
+    schedule_clashes = 0
+    attendance_issues = 0
+    certificate_count: int | None = None
     if "schedule" in config.steps:
         if config.schedule_path is None:
             raise ConfigError(
@@ -126,10 +188,19 @@ def _run(args: argparse.Namespace) -> int:
             read_csv(config.schedule_path),
             config.utc_offset,
         )
+        schedule_errors = len(schedule_result.errors)
+        schedule_clashes = len(schedule_result.issues_by_code("SC02")) // 2 + len(schedule_result.issues_by_code("SC03")) // 2
         result = RosterResult(
             result.rows,
             result.issues + tuple(schedule_result.issues),
             result.extra_columns,
+        )
+        summary.extend(
+            (
+                f"Schedule sessions: {len(schedule_result.sessions)}",
+                f"Schedule exclusions: {len(schedule_result.excluded_row_numbers)}",
+                f"Schedule clashes: {len(schedule_result.issues_by_code('SC02')) // 2 + len(schedule_result.issues_by_code('SC03')) // 2}",
+            )
         )
         ics_content = render_ics(
             schedule_result,
@@ -169,6 +240,7 @@ def _run(args: argparse.Namespace) -> int:
             attendance_table=attendance_table,
         )
         extra_files.update(bundle.files)
+        summary.append(f"Certificates: {len(bundle.issued)}")
         if bundle.skipped_reason:
             unresolved.append(bundle.skipped_reason)
         unresolved.extend(bundle.verification_issues)
@@ -179,6 +251,73 @@ def _run(args: argparse.Namespace) -> int:
                 result.issues + bundle.attendance.issues,
                 result.extra_columns,
             )
+        if bundle.attendance is not None:
+            attendance_issues = len(bundle.attendance.issues)
+            summary.extend(
+                (
+                    f"Attendance rows: {bundle.attendance.rows_read}",
+                    f"Certificate recipients: {len(bundle.issued)}",
+                    f"Attendance issues: {len(bundle.attendance.issues)}",
+                )
+            )
+        certificate_count = len(bundle.issued)
+    if "emails" in config.steps:
+        if "certificates" not in config.steps:
+            raise ConfigError("Email drafts require the certificates step")
+        bundle = bundle if "bundle" in locals() else None
+        if bundle is None or not bundle.issued:
+            drafts = ()
+        else:
+            drafts = tuple(
+                render_email_draft(
+                    certificate.name or "Attendee",
+                    certificate.email,
+                    config.name,
+                    certificate.code,
+                    text_template=config.email_text or DEFAULT_TEXT_TEMPLATE,
+                    html_template=config.email_html or DEFAULT_HTML_TEMPLATE,
+                    subject_template=config.email_subject,
+                    certificate=(
+                        bundle.files.get(
+                            f"certificates/{certificate_filename(certificate.name or '', certificate.code)}"
+                        )
+                    ),
+                )
+                for certificate in bundle.issued
+            )
+        for draft in drafts:
+            extra_files[f"emails/{draft.filename}"] = draft.message
+            try:
+                verify_email_draft(
+                    draft,
+                    expected_email=draft.email,
+                    expected_attachment=draft.has_certificate,
+                )
+            except ValueError as exc:
+                unresolved.append(f"Email draft post-check failed: {exc}")
+            else:
+                verified.append(f"Email draft parses: {draft.filename}.")
+        extra_files["mailmerge.csv"] = render_mailmerge_csv(drafts)
+        verified.append("Mail-merge CSV matches the generated email drafts.")
+        summary.extend(
+            (
+                f"Email drafts: {len(drafts)}",
+                f"Email attachments: {sum(1 for draft in drafts if draft.has_certificate)}",
+            )
+        )
+    if "certificates" in config.steps and "manifest.json" in extra_files:
+        manifest = manifest_from_json(extra_files["manifest.json"].decode("utf-8"))
+        extra_files["verify.html"] = render_verify_page(manifest.as_dict())
+        verified.append("Offline verification page embeds the public manifest.")
+    extra_files["risk.md"] = render_risk_report(
+        result,
+        schedule_errors=schedule_errors,
+        schedule_clashes=schedule_clashes,
+        attendance_issues=attendance_issues,
+        certificates=certificate_count,
+        unresolved=unresolved,
+    )
+    verified.append("Risk report summarizes all enabled-step unresolved conditions.")
     output = plan_or_write_roster(
         config,
         result,
@@ -187,6 +326,7 @@ def _run(args: argparse.Namespace) -> int:
         extra_files=extra_files,
         extra_unresolved=unresolved,
         extra_verified=verified,
+        extra_summary=summary,
     )
     mode = "Dry run" if args.dry_run else "Run"
     print(
@@ -222,16 +362,48 @@ def _verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _clean(args: argparse.Namespace) -> int:
+    result = clean_event(args.event_toml, dry_run=args.dry_run)
+    print(format_clean_plan(result))
+    if args.dry_run:
+        print("No files removed.")
+    return 0
+
+
+def _diff(args: argparse.Namespace) -> int:
+    config = load_config(args.event_toml)
+    if not config.registrations_path.is_file():
+        raise ConfigError(f"Registration CSV not found: {config.registrations_path}")
+    current = validate_roster(read_csv(config.registrations_path), columns=config.columns)
+    previous = None
+    previous_roster = config.output_dir / "roster.csv"
+    if previous_roster.is_file():
+        previous = validate_roster(read_csv(previous_roster))
+    print(
+        render_impact_preview(
+            ImpactRun(roster=current),
+            ImpactRun(roster=previous) if previous is not None else None,
+            include_names=args.include_names,
+        ),
+        end="",
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
         if args.command == "init":
-            return _init(args.dir)
+            return _init(args.dir, full=args.full)
         if args.command == "run":
             return _run(args)
         if args.command == "verify":
             return _verify(args)
+        if args.command == "clean":
+            return _clean(args)
+        if args.command == "diff":
+            return _diff(args)
         parser.print_help()
         return 2
     except (ConfigError, FileNotFoundError, OSError, UnicodeError, ValueError, csv.Error) as exc:

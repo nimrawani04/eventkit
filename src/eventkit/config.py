@@ -30,6 +30,9 @@ class EventConfig:
     certificate_title: str
     certificate_issue_to: str
     manifest_names: bool
+    email_subject: str
+    email_text: str
+    email_html: str
 
 
 def _text(value: Any, *, field: str, required: bool = True) -> str:
@@ -85,14 +88,16 @@ def load_config(path: str | Path) -> EventConfig:
     if not isinstance(steps_value, list) or not all(isinstance(step, str) for step in steps_value):
         raise ConfigError("[output].steps must be a list of strings")
     steps = tuple(step.strip().lower() for step in steps_value if step.strip())
-    unsupported = sorted(set(steps) - {"roster", "checkin", "schedule", "certificates"})
+    unsupported = sorted(set(steps) - {"roster", "checkin", "schedule", "certificates", "emails"})
     if unsupported:
         joined = ", ".join(unsupported)
         raise ConfigError(
-            f"Unsupported step(s) in this build: {joined}; currently available: roster, checkin, schedule, certificates"
+            f"Unsupported step(s) in this build: {joined}; currently available: roster, checkin, schedule, certificates, emails"
         )
     if "roster" not in steps:
         raise ConfigError("[output].steps must include 'roster' for this build")
+    if "emails" in steps and "certificates" not in steps:
+        raise ConfigError("[output].steps must include 'certificates' when 'emails' is enabled")
 
     root = config_path.parent
     registration_path = _relative_path(
@@ -127,6 +132,24 @@ def load_config(path: str | Path) -> EventConfig:
     if not isinstance(manifest_names, bool):
         raise ConfigError("certificates.manifest_names must be true or false")
 
+    emails = data.get("emails", {})
+    if not isinstance(emails, dict):
+        raise ConfigError("[emails] must be a table")
+    email_subject = _text(
+        emails.get("subject", "Your {event} certificate"),
+        field="emails.subject",
+    )
+    email_text = _text(
+        emails.get("text", ""),
+        field="emails.text",
+        required=False,
+    )
+    email_html = _text(
+        emails.get("html", ""),
+        field="emails.html",
+        required=False,
+    )
+
     normalized_columns: dict[str, str] = {}
     for canonical in ("name", "email", "phone", "institution"):
         value = columns.get(canonical, canonical)
@@ -152,4 +175,7 @@ def load_config(path: str | Path) -> EventConfig:
         ),
         certificate_issue_to=issue_to,
         manifest_names=manifest_names,
+        email_subject=email_subject,
+        email_text=email_text,
+        email_html=email_html,
     )

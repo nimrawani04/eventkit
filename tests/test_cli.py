@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
+import re
 import shutil
+import pytest
 from xml.etree import ElementTree
 
 from eventkit.cli import main
@@ -29,12 +31,13 @@ def test_init_and_dry_run_are_safe_and_repeatable(tmp_path, capsys):
         "issues.md",
         "schedule.ics",
         "agenda.html",
+        "risk.md",
         "report.md",
         "audit.jsonl",
     }
 
     assert main(["run", str(demo / "event.toml")]) == 0
-    assert "unchanged=6" in capsys.readouterr().out
+    assert "unchanged=7" in capsys.readouterr().out
 
 
 def test_strict_returns_one_but_still_writes_explanations(tmp_path):
@@ -148,6 +151,8 @@ def test_certificate_run_writes_svg_manifest_and_verify_result(tmp_path, monkeyp
     assert "ada@example.com" not in (kit / "manifest.json").read_text(encoding="utf-8")
     certificate = next((kit / "certificates").glob("*.svg"))
     ElementTree.parse(certificate)
+    assert (kit / "verify.html").is_file()
+    assert (kit / "risk.md").is_file()
     report = (kit / "report.md").read_text(encoding="utf-8")
     assert "Every generated certificate SVG parses as XML." in report
     assert "Every generated certificate code verifies against the manifest." in report
@@ -215,7 +220,10 @@ def test_symlinked_certificate_directory_is_refused(tmp_path, monkeypatch):
     external = tmp_path / "external"
     shutil.rmtree(certificates)
     external.mkdir()
-    certificates.symlink_to(external, target_is_directory=True)
+    try:
+        certificates.symlink_to(external, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
 
     assert main(["run", str(event)]) == 2
     assert not list(external.iterdir())
@@ -254,6 +262,7 @@ def test_checkin_and_certificate_steps_work_together_end_to_end(tmp_path, monkey
     assert '"step":"certificates"' in audit
     report = (kit / "report.md").read_text(encoding="utf-8")
     assert "Check-in sheet parses and matches the included roster." in report
+    assert (kit / "risk.md").is_file()
 
 
 def test_checkin_step_requires_secret_before_writing(tmp_path, monkeypatch):
@@ -324,6 +333,8 @@ def test_full_roster_checkin_schedule_certificate_flow_is_repeatable(tmp_path, m
         "checkin.html",
         "schedule.ics",
         "agenda.html",
+        "risk.md",
+        "verify.html",
         "manifest.json",
         "certificates",
         "report.md",
@@ -336,3 +347,91 @@ def test_full_roster_checkin_schedule_certificate_flow_is_repeatable(tmp_path, m
     assert main(["run", str(event)]) == 0
     second = {path.relative_to(kit): path.read_bytes() for path in kit.rglob("*") if path.is_file()}
     assert first == second
+
+
+def test_email_drafts_and_offline_verify_page_are_generated(tmp_path, monkeypatch):
+    event = _certificate_event(
+        tmp_path,
+        steps='["roster", "certificates", "emails"]',
+    )
+    monkeypatch.setenv("EVENTKIT_SECRET", "certificate-test-secret")
+
+    assert main(["run", str(event)]) == 0
+    kit = tmp_path / "kit"
+    drafts = list((kit / "emails").glob("*.eml"))
+    assert len(drafts) == 1
+    draft = drafts[0].read_text(encoding="utf-8")
+    assert "X-Unsent: 1" in draft
+    assert "Date:" not in draft
+    assert (kit / "mailmerge.csv").is_file()
+
+    page = (kit / "verify.html").read_text(encoding="utf-8")
+    match = re.search(
+        r'<script type="application/json" id="manifest">(.*?)</script>',
+        page,
+        re.DOTALL,
+    )
+    assert match is not None
+    embedded = json.loads(match.group(1))
+    assert embedded["certificate_count"] == 1
+    assert "ada@example.com" not in page
+
+
+def test_disabling_email_step_removes_unchanged_email_outputs(tmp_path, monkeypatch):
+    event = _certificate_event(
+        tmp_path,
+        steps='["roster", "certificates", "emails"]',
+    )
+    monkeypatch.setenv("EVENTKIT_SECRET", "certificate-test-secret")
+    assert main(["run", str(event)]) == 0
+    kit = tmp_path / "kit"
+    assert list((kit / "emails").glob("*.eml"))
+
+    event.write_text(
+        event.read_text(encoding="utf-8").replace(
+            '["roster", "certificates", "emails"]',
+            '["roster", "certificates"]',
+        ),
+        encoding="utf-8",
+    )
+    assert main(["run", str(event)]) == 0
+    assert not (kit / "mailmerge.csv").exists()
+    assert not list((kit / "emails").glob("*.eml"))
+
+
+def test_clean_cli_removes_only_the_generated_kit(tmp_path, monkeypatch, capsys):
+    event = _certificate_event(
+        tmp_path,
+        steps='["roster", "certificates", "emails"]',
+    )
+    monkeypatch.setenv("EVENTKIT_SECRET", "certificate-test-secret")
+    assert main(["run", str(event)]) == 0
+    kit = tmp_path / "kit"
+    (kit / "notes.txt").write_text("keep me\n", encoding="utf-8")
+
+    assert main(["clean", str(event), "--dry-run"]) == 0
+    assert (kit / "manifest.json").exists()
+    assert "No files removed." in capsys.readouterr().out
+
+    assert main(["clean", str(event)]) == 0
+    assert not (kit / "roster.csv").exists()
+    assert not (kit / "manifest.json").exists()
+    assert not (kit / "audit.jsonl").exists()
+    assert (kit / "notes.txt").exists()
+
+
+def test_diff_command_reports_privacy_safe_registration_changes(tmp_path, capsys):
+    event = _schedule_event(tmp_path, steps='["roster"]')
+    assert main(["run", str(event)]) == 0
+    registrations = tmp_path / "data" / "registrations.csv"
+    registrations.write_text(
+        "name,email,phone,institution\n"
+        "Ada Lovelace,ada@example.com,12345678,University\n"
+        "Grace Hopper,grace@example.com,12345679,Institute\n",
+        encoding="utf-8",
+    )
+
+    assert main(["diff", str(event)]) == 0
+    output = capsys.readouterr().out
+    assert "Added" in output
+    assert "grace@example.com" not in output

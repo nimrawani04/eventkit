@@ -3,6 +3,18 @@
 from .attendance import AttendanceResult, filter_attendance, recipients_from_roster
 from .certificate_pipeline import CertificateBundle, build_certificate_bundle
 from .certificates import certificate_filename, render_certificate_svg, safe_filename_slug
+from .emails import (
+    DEFAULT_HTML_TEMPLATE,
+    DEFAULT_SUBJECT_TEMPLATE,
+    DEFAULT_TEXT_TEMPLATE,
+    MAILMERGE_FIELDS,
+    EmailDraft,
+    EmailRecipient,
+    build_email_drafts,
+    render_email_draft,
+    render_mailmerge_csv,
+    verify_email_draft,
+)
 from .checkin import (
     CheckinEntry,
     build_checkin_entries,
@@ -12,6 +24,10 @@ from .checkin import (
 )
 from .agenda import render_agenda, verify_agenda_html
 from .calendar import parse_ics, render_ics, verify_ics
+from .clean import clean_event, clean_output, format_clean_plan, plan_clean
+from .impact import ImpactPreview, ImpactRun, compare_runs, render_impact_preview
+from .risk import render_risk_report
+from .verify_page import render_verify_page
 from .codes import (
     CertificateRecipient,
     CodeError,
@@ -78,13 +94,18 @@ __all__ = [
     "CsvRow",
     "CsvTable",
     "EventConfig",
+    "EmailDraft",
+    "EmailRecipient",
     "FileAction",
     "IssuedCertificate",
     "Issue",
     "IssueLevel",
+    "ImpactPreview",
+    "ImpactRun",
     "Manifest",
     "ManifestCertificate",
     "ManifestError",
+    "MAILMERGE_FIELDS",
     "OutputResult",
     "RosterResult",
     "RosterRow",
@@ -99,14 +120,22 @@ __all__ = [
     "build_certificate_bundle",
     "build_checkin_entries",
     "build_checkin_file",
+    "build_email_drafts",
+    "clean_event",
+    "clean_output",
     "canonical_code_sha256",
     "canonicalize_code",
     "certificate_filename",
     "create_manifest",
+    "compare_runs",
     "detect_clashes",
+    "DEFAULT_HTML_TEMPLATE",
+    "DEFAULT_SUBJECT_TEMPLATE",
+    "DEFAULT_TEXT_TEMPLATE",
     "email_domain",
     "email_domain_suggestion",
     "filter_attendance",
+    "format_clean_plan",
     "format_plan",
     "generate_certificate_code",
     "generate_checkin_code",
@@ -129,20 +158,27 @@ __all__ = [
     "read_csv_text",
     "recipients_from_roster",
     "render_checkin_html",
+    "render_email_draft",
+    "render_mailmerge_csv",
     "render_agenda",
     "render_ics",
+    "render_impact_preview",
     "render_certificate_svg",
     "render_issues_md",
     "render_report",
+    "render_risk_report",
     "render_roster_csv",
+    "render_verify_page",
     "safe_filename_slug",
     "secret_from_environment",
     "validate",
     "validate_roster",
     "verify_agenda_html",
     "verify_checkin_html",
+    "verify_email_draft",
     "verify_ics",
     "verify",
+    "plan_clean",
 ]
 
 __version__ = "0.1.0"

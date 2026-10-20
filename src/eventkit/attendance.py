@@ -54,10 +54,35 @@ def filter_attendance(
 
     recipients: list[CertificateRecipient] = []
     issues: list[Issue] = []
+    seen_attendance: dict[str, tuple[int, str]] = {}
     for attendance_row in table.rows:
         values = attendance_row.as_dict(table.headers)
         raw_email = values.get(email_header, "")
         email = normalize_email(raw_email)
+        if email and email in seen_attendance:
+            previous_row, previous_role = seen_attendance[email]
+            current_role = (values.get(role_header, "") if role_header else "").strip() or "Participant"
+            issues.append(
+                Issue(
+                    code="EK08",
+                    level=IssueLevel.WARNING,
+                    row_number=attendance_row.line_number,
+                    message=(
+                        f"Attendance email is repeated from row {previous_row}"
+                        + (
+                            f" with role '{previous_role}' and role '{current_role}'."
+                            if previous_role != current_role
+                            else "."
+                        )
+                    ),
+                    suggestion="Keep one attendance row or confirm the intended role.",
+                    related_row_number=previous_row,
+                    field="email",
+                )
+            )
+        elif email:
+            current_role = (values.get(role_header, "") if role_header else "").strip() or "Participant"
+            seen_attendance[email] = (attendance_row.line_number, current_role)
         matched = included.get(email)
         excluded_match = excluded.get(email)
         if matched is None:

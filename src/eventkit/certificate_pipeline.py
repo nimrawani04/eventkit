@@ -9,6 +9,7 @@ from .attendance import AttendanceResult, filter_attendance, recipients_from_ros
 from .certificates import certificate_filename, render_certificate_svg
 from .codes import (
     CertificateRecipient,
+    IssuedCertificate,
     create_manifest,
     issue_certificates,
     manifest_to_json,
@@ -29,6 +30,7 @@ class CertificateBundle:
     skipped_reason: str | None = None
     verified: tuple[str, ...] = ()
     verification_issues: tuple[str, ...] = ()
+    issued: tuple[IssuedCertificate, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "files", dict(self.files))
@@ -120,6 +122,7 @@ def build_certificate_bundle(
         attendance=attendance,
         verified=tuple(verified),
         verification_issues=tuple(verification_issues),
+        issued=issued,
     )
 
 

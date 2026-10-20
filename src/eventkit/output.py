@@ -103,6 +103,7 @@ def render_report(
     actions: Iterable[FileAction],
     unresolved: Iterable[str],
     verified: Iterable[str] = (),
+    summary: Iterable[str] = (),
 ) -> bytes:
     """Render the first-slice report with explicit verified/unresolved parts."""
 
@@ -121,10 +122,9 @@ def render_report(
         f"- Errors: {errors}",
         f"- Warnings: {warnings}",
         f"- Files planned: {len(actions) + 2}",
-        "",
-        "## Verified",
-        "",
     ]
+    lines.extend(f"- {item}" for item in summary)
+    lines.extend(("", "## Verified", ""))
     kept_paths = {item.relative_path for item in actions if item.action == "keep"}
     if not ({"roster.csv", "issues.md"} & kept_paths):
         lines.extend(
@@ -144,6 +144,22 @@ def render_report(
             item
             for item in verified_items
             if not item.startswith("Schedule") and not item.startswith("Agenda")
+        ]
+    if "mailmerge.csv" in kept_paths or any(path.startswith("emails/") for path in kept_paths):
+        verified_items = [
+            item for item in verified_items
+            if not item.startswith("Email draft")
+            and not item.startswith("Mail-merge CSV")
+        ]
+    if "verify.html" in kept_paths:
+        verified_items = [
+            item for item in verified_items
+            if not item.startswith("Offline verification page")
+        ]
+    if "risk.md" in kept_paths:
+        verified_items = [
+            item for item in verified_items
+            if not item.startswith("Risk report")
         ]
     if any(
         path == "manifest.json" or path.startswith("certificates/")
@@ -247,6 +263,12 @@ def _step_for_path(relative_path: str) -> str:
         return "checkin"
     if relative_path in {"schedule.ics", "agenda.html"}:
         return "schedule"
+    if relative_path == "mailmerge.csv" or relative_path.startswith("emails/"):
+        return "emails"
+    if relative_path == "verify.html":
+        return "certificates"
+    if relative_path == "risk.md":
+        return "report"
     if relative_path == "manifest.json" or relative_path.startswith("certificates/"):
         return "certificates"
     if relative_path == "report.md":
@@ -299,6 +321,7 @@ def plan_or_write_roster(
     extra_files: Mapping[str, bytes] | None = None,
     extra_unresolved: Iterable[str] = (),
     extra_verified: Iterable[str] = (),
+    extra_summary: Iterable[str] = (),
 ) -> OutputResult:
     """Plan or write roster files and optional pipeline-step files."""
 
@@ -324,7 +347,10 @@ def plan_or_write_roster(
         )
         for name, content in file_contents.items()
     )
-    current_paths = set(file_contents)
+    # report.md is rendered immediately below, so treat it as current while
+    # reconciling stale generated files. Otherwise every second run would see
+    # the previous report as stale and make the report/audit non-deterministic.
+    current_paths = set(file_contents) | {"report.md"}
     stale_actions: list[FileAction] = []
     if audit_owned:
         for relative_path, previous_hash in sorted(previous_hashes.items()):
@@ -335,6 +361,10 @@ def plan_or_write_roster(
                 and not relative_path.startswith("certificates/")
                 and relative_path != "checkin.html"
                 and relative_path not in {"schedule.ics", "agenda.html"}
+                and relative_path != "mailmerge.csv"
+                and not relative_path.startswith("emails/")
+                and relative_path not in {"verify.html", "risk.md"}
+                and relative_path not in {"report.md"}
             ):
                 continue
             target = _safe_target(root, relative_path)
@@ -367,6 +397,7 @@ def plan_or_write_roster(
         first_actions + tuple(stale_actions),
         report_unresolved,
         extra_verified,
+        extra_summary,
     )
     file_contents["report.md"] = report_content
     actions = list(
