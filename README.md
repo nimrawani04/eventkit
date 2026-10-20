@@ -1,214 +1,365 @@
 # eventkit
 
-eventkit is an offline, deterministic command-line tool for turning messy
-event registration exports into an explained roster. The product requirements
-are in [`eventkit Product Requirements Document.md`](eventkit%20Product%20Requirements%20Document.md).
+**A private, deterministic event-operations kit from ordinary CSV files.**
 
-## Current build slice
+eventkit turns registration, attendance, and schedule exports into a complete
+local event kit: a cleaned roster, explained issues, a printable check-in sheet,
+calendar and agenda files, offline-verifiable certificates, unsent email
+drafts, a risk report, and a polished offline dashboard.
 
-The first buildable slice implements the PRD's roster milestone:
+It is deliberately **offline-first**: runtime code uses the Python standard
+library, makes no network or AI calls, sends no email, and produces byte-stable
+artifacts for the same inputs.
 
-- BOM-safe CSV reading with physical line numbers and quoted multiline fields;
-- NFC/whitespace name normalization, email comparison normalization, and phone normalization;
-- EK01-EK06 validation, including exact duplicates, possible duplicates, phone warnings, and common email-domain suggestions;
-- deterministic `roster.csv`, `issues.md`, `report.md`, and `audit.jsonl` output;
-- `init`, `run`, `--dry-run`, `--strict`, and `--version`;
-- safe output handling that keeps files edited outside eventkit's audit record.
-- deterministic attendance-filtered certificate SVGs, a privacy-preserving
-  `manifest.json`, and offline `verify`.
-- deterministic printable `checkin.html` with stable check-in codes.
-- deterministic UTC `schedule.ics` and grouped, clash-marked `agenda.html`.
-- deterministic unsent `emails/*.eml` drafts and `mailmerge.csv`.
-- safe `clean`, privacy-safe `diff`, `risk.md`, and an offline `verify.html` page.
-- a self-contained luxury-style offline `dashboard.html` interface for the kit.
+> Product requirements: [`eventkit Product Requirements Document.md`](eventkit%20Product%20Requirements%20Document.md)
 
-The hosted/web UI and network delivery are intentionally not part of the
-project: eventkit writes local artifacts only.
+## What you get
+
+| Capability | Output or command |
+| --- | --- |
+| Roster cleaning | `roster.csv`, `issues.md` |
+| Attendance matching | EK07/EK08 findings and certificate eligibility |
+| Printable check-in | `checkin.html` |
+| Schedule validation | SC01, SC02, SC03 findings |
+| Calendar and agenda | `schedule.ics`, `agenda.html` |
+| Certificates | `certificates/*.svg`, `manifest.json` |
+| Offline verification | `eventkit verify`, `verify.html` |
+| Email drafts | `emails/*.eml`, `mailmerge.csv` |
+| Operational safety | dry run, audit log, safe `clean` |
+| Change visibility | privacy-safe `eventkit diff` |
+| Executive view | `dashboard.html`, `risk.md`, `report.md` |
+
+The generated dashboard is a self-contained, responsive, print-friendly HTML
+interface with a restrained navy, ivory, and champagne-gold visual system. It
+opens directly from disk and does not need a web server.
 
 ## Requirements
 
-- Python 3.12 (pinned in `.python-version`);
-- runtime dependencies: none;
-- pytest is the pinned development dependency in `requirements-dev.txt`.
+- Python **3.12**; the version is pinned in `.python-version` and Docker uses
+  `python:3.12-slim`.
+- No runtime dependencies beyond the Python standard library.
+- `pytest` is the pinned development dependency set in
+  `requirements-dev.txt`.
+- Docker is optional for local development and required only for container
+  rebuild verification.
 
-## Setup
+## Install
+
+### Linux / macOS
 
 ```sh
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements-dev.txt
-.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+. .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m pip install --no-deps --no-build-isolation -e .
 ```
 
-On Windows, use the equivalent `.venv\Scripts\python` paths. Do not put a real
-`EVENTKIT_SECRET` in the repository; `.env.example` is only a placeholder. The
-secret must be supplied in the environment and must be at least 16 characters.
+### Windows PowerShell
 
-## Quickstart
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+python -m pip install --no-deps --no-build-isolation -e .
+```
 
-Activate the project environment first so the commands use the pinned local
-tools:
+If PowerShell execution policy blocks activation, invoke the environment
+directly instead:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
+```
+
+The application does not load `.env` files. Keep real secrets out of the
+repository; `.env.example` contains only a placeholder.
+
+## Quickstart: roster and schedule
+
+Create a deliberate sample event:
 
 ```sh
-. .venv/bin/activate
 eventkit init demo
 eventkit run demo/event.toml --dry-run
 eventkit run demo/event.toml
-cat demo/kit/issues.md
 ```
 
-`init` writes deliberate data problems. The dry run prints create/update/keep
-actions and writes nothing. Add `--strict` when an error-level issue should
-return exit code 1. Configuration and input errors return exit code 2. The
-normal run keeps all source rows in `roster.csv`, marking excluded rows and
-listing each issue with its source row number in `issues.md`.
-
-The output writer records content hashes in `audit.jsonl`. A rerun with
-unchanged inputs is deterministic; a file changed by an organizer is kept
-instead of being overwritten.
-
-## Certificates and offline verification
-
-Enable the certificate step in `event.toml`:
-
-```toml
-[input]
-registrations = "data/registrations.csv"
-attendance = "data/attendance.csv"
-
-[certificates]
-title = "Certificate of Participation"
-issue_to = "attended"
-manifest_names = true
-
-[output]
-dir = "kit"
-steps = ["roster", "certificates"]
-```
-
-The attendance CSV requires `email` and may include `role`; missing roles use
-`Participant`. Unknown attendance emails and emails matching excluded roster
-rows receive EK07 and do not get certificates. When `issue_to = "attended"`
-and no attendance file is configured, the certificate step is skipped and the
-reason is recorded in `report.md`.
-
-Run with a secret supplied only by the environment:
+The dry run prints every planned action and writes nothing. Open the result:
 
 ```sh
+# macOS
+open demo/kit/dashboard.html
+
+# Linux
+xdg-open demo/kit/dashboard.html
+
+# Windows PowerShell
+Start-Process (Resolve-Path demo/kit/dashboard.html)
+```
+
+The sample intentionally contains bad registrations and schedule clashes so
+the issues, risk report, and dashboard have something useful to show.
+
+## Full demo: certificates and email drafts
+
+Initialize the complete pipeline:
+
+```sh
+eventkit init demo-full --full
+```
+
+Set a local signing secret with at least 16 characters, then run:
+
+```sh
+# Linux / macOS
 export EVENTKIT_SECRET='replace-with-a-local-secret-at-least-16-chars'
-eventkit run event.toml
+eventkit run demo-full/event.toml
+
+# Windows PowerShell
+$env:EVENTKIT_SECRET = 'replace-with-a-local-secret-at-least-16-chars'
+eventkit run demo-full/event.toml
+```
+
+The full run produces certificates, the public manifest, an offline verifier,
+and unsent drafts. Nothing is delivered to a mail server.
+
+## Command reference
+
+```text
+eventkit --help
+eventkit --version
+eventkit init [DIR] [--full]
+eventkit run EVENT_TOML [--dry-run] [--strict] [--out DIR]
+eventkit verify CODE --manifest PATH
+eventkit clean EVENT_TOML [--dry-run]
+eventkit diff EVENT_TOML [--include-names]
+```
+
+### `init`
+
+```sh
+eventkit init demo-full --full
+```
+
+The normal sample creates registrations and schedule data. `--full` also adds
+attendance data and enables check-in, certificates, and email drafts.
+
+### `run`
+
+```sh
+eventkit run event.toml --dry-run
+eventkit run event.toml --strict
+eventkit run event.toml --out another-kit
+```
+
+- `--dry-run` plans every file operation without writing.
+- `--strict` returns `1` when enabled validation produces error-level issues.
+- `--out` changes only the output directory; input paths remain relative to
+  `event.toml`.
+
+### `verify`
+
+```sh
 eventkit verify ABCD-1234-EFGH --manifest kit/manifest.json
 ```
 
-Certificates are written under `kit/certificates/` as deterministic A4
-landscape SVG files. The manifest stores event metadata, roles, optional names,
-and SHA-256 hashes of canonical codes; it never stores email addresses. A
-`VALID` result proves only that the code is present in the manifest supplied to
-`verify`. Recipients must obtain that manifest from an organizer or another
-source they trust.
+The command normalizes case, spaces, hyphens, and Crockford ambiguous
+characters. A valid result proves only that the code is present in the
+manifest supplied to the command. The organizer must publish that manifest
+through a channel the recipient trusts.
 
-The run also writes `kit/verify.html`, a self-contained browser page that
-checks the public manifest locally with Web Crypto. It makes no network calls.
-
-The run also writes `kit/dashboard.html`, a self-contained professional
-interface for the event kit. It includes overview metrics, attendees, schedule
-clashes, certificate links, risk/unresolved findings, and links to every local
-deliverable. It uses inline CSS and vanilla JavaScript only, so it opens from
-disk without a server or internet connection.
-
-## Schedule, calendar, and agenda
-
-Enable the schedule step and provide a schedule CSV with `start`, `end`,
-`title`, and `room` columns. A `speaker` column is optional:
-
-```toml
-[input]
-registrations = "data/registrations.csv"
-schedule = "data/schedule.csv"
-
-[event]
-utc_offset = "+05:30"
-
-[output]
-dir = "kit"
-steps = ["roster", "checkin", "schedule", "certificates"]
-```
-
-Times use `YYYY-MM-DD HH:MM` in the event's configured local offset. Invalid
-or backwards sessions receive SC01 and are excluded from generated calendar
-output. Overlapping sessions in one room receive SC02; overlapping sessions
-with the same speaker receive SC03. Sessions that touch at an endpoint are
-allowed. The run writes `schedule.ics` in UTC with CRLF line endings and
-`agenda.html` grouped by local day with clashes marked.
-
-## Printable check-in sheet
-
-Add `checkin` to the output steps:
-
-```toml
-[output]
-dir = "kit"
-steps = ["roster", "checkin", "certificates"]
-```
-
-With `EVENTKIT_SECRET` set, `eventkit run` writes `kit/checkin.html`. It omits
-excluded registrations, sorts included attendees by normalized name and stable
-check-in code, and includes a print stylesheet with a number, name,
-institution, check-in code, and tick box. The HTML is deterministic and all
-dynamic attendee text is escaped.
-
-## Email drafts
-
-Add `emails` after `certificates` to create drafts without sending anything:
-
-```toml
-[output]
-steps = ["roster", "checkin", "schedule", "certificates", "emails"]
-
-[emails]
-subject = "Your {event} certificate"
-text = "Hello {name},\\n\\nYour code is {code}."
-html = "<p>Hello {name},</p><p>Your code is <strong>{code}</strong>.</p>"
-```
-
-The supported template fields are `{name}`, `{event}`, and `{code}`. Each
-draft has `X-Unsent: 1`, no `Date` header, deterministic MIME boundaries, and
-the matching SVG certificate attached when available. `mailmerge.csv` contains
-metadata only; eventkit never sends mail.
-
-## Clean, risk, and impact preview
-
-Remove only unchanged files eventkit owns:
+### `clean`
 
 ```sh
 eventkit clean event.toml --dry-run
 eventkit clean event.toml
 ```
 
-Edited, unowned, malformed-audit, and symlinked files are kept and reported.
+Only files owned by a valid audit log and unchanged since generation are
+removed. Edited, unowned, malformed, and unsafe files are kept and reported.
+The audit log is removed last. Cleanup never follows a symlink outside the kit.
 
-Preview registration changes before another run:
+### `diff`
 
 ```sh
 eventkit diff event.toml
 eventkit diff event.toml --include-names
 ```
 
-The default preview uses stable pseudonymous IDs and never renders email
-addresses. Every normal run also creates `risk.md`, a deterministic summary of
-roster errors, schedule clashes, attendance mismatches, unresolved files, and
-certificate/email counts.
+The preview compares the current registration input with the previous generated
+roster. By default it uses stable pseudonymous IDs and never renders email
+addresses. `--include-names` is intended for a local organizer preview only.
 
-For a complete local demo, initialize the full pipeline:
+## Configuration
 
-```sh
-eventkit init demo-full --full
-EVENTKIT_SECRET='replace-with-a-local-secret-at-least-16-chars' \
-  eventkit run demo-full/event.toml --dry-run
+The configuration is one `event.toml` file. Paths are relative to that file;
+absolute paths and path traversal are rejected.
+
+```toml
+[event]
+id = "demo-summit-2026"
+name = "Demo Summit 2026"
+organizer = "Campus Tech Club"
+utc_offset = "+05:30"
+
+[input]
+registrations = "data/registrations.csv"
+attendance = "data/attendance.csv"
+schedule = "data/schedule.csv"
+
+[columns]
+name = "Full Name"
+email = "Email Address"
+phone = "Phone"
+institution = "College"
+
+[certificates]
+title = "Certificate of Participation"
+issue_to = "attended"
+manifest_names = true
+
+[emails]
+subject = "Your {event} certificate"
+text = "Hello {name},\\n\\nYour code is {code}."
+html = "<p>Hello {name}</p><p>Your code is <strong>{code}</strong>.</p>"
+
+[output]
+dir = "kit"
+steps = ["roster", "checkin", "schedule", "certificates", "emails"]
 ```
+
+Supported output steps are:
+
+```text
+roster, checkin, schedule, certificates, emails
+```
+
+`emails` requires `certificates` because drafts attach the matching SVG when
+one is available.
+
+## Input files
+
+### Registrations
+
+Required logical columns:
+
+- `name`
+- `email`
+
+Optional logical columns:
+
+- `phone`
+- `institution`
+
+CSV headers can be mapped with `[columns]`. UTF-8 BOMs, quoted commas,
+multiline fields, and blank lines are supported. Extra columns are retained in
+the issue report as ignored input columns.
+
+### Attendance
+
+Required column:
+
+```csv
+email
+```
+
+Optional column:
+
+```csv
+email,role
+ada@example.com,Speaker
+```
+
+Missing roles become `Participant`. Unknown or excluded registrations receive
+EK07. Repeated attendance rows receive EK08.
+
+### Schedule
+
+Required columns:
+
+```csv
+start,end,title,room
+2026-05-01 09:00,2026-05-01 10:00,Opening,Hall 1
+```
+
+Optional column: `speaker`.
+
+Times are local to `[event].utc_offset` and use `YYYY-MM-DD HH:MM`. Invalid or
+backwards sessions receive SC01. Overlapping room sessions receive SC02;
+overlapping sessions with the same speaker receive SC03. Touching sessions are
+allowed.
+
+## Generated kit
+
+A complete run looks like this:
+
+```text
+kit/
+├── dashboard.html          # polished offline event interface
+├── roster.csv              # every registration with status and issues
+├── issues.md               # row-level explanations and suggested fixes
+├── checkin.html            # printable included-attendee sheet
+├── schedule.ics            # deterministic UTC calendar
+├── agenda.html             # grouped local-time agenda
+├── certificates/
+│   └── *.svg               # deterministic A4 landscape certificates
+├── manifest.json            # public certificate hashes; no emails
+├── verify.html              # browser-based offline verifier
+├── emails/
+│   └── *.eml               # unsent draft messages
+├── mailmerge.csv            # draft metadata only
+├── risk.md                 # deterministic operational risk summary
+├── report.md               # verified and unresolved run report
+└── audit.jsonl             # ownership hashes and input digest
+```
+
+The dashboard links to the local deliverables and works with a double-click;
+no server is required.
+
+## Validation and safety rules
+
+### Roster issues
+
+| Code | Meaning | Effect |
+| --- | --- | --- |
+| EK01 | name or email missing | row excluded |
+| EK02 | invalid email syntax | row excluded |
+| EK03 | exact duplicate email | later row excluded |
+| EK04 | possible duplicate | warning; row kept |
+| EK05 | phone length outside 8–15 digits | warning; row kept |
+| EK06 | likely common email-domain typo | warning; never auto-fixed |
+| EK07 | attendance email missing or excluded from roster | no certificate |
+| EK08 | repeated attendance email | warning; review role/duplicate |
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | successful command; valid `verify` |
+| `1` | `run --strict` found errors, or `verify` found an invalid code |
+| `2` | usage, config, input, or required-secret error |
+
+Expected errors are printed as short messages without tracebacks. Missing
+secrets are checked before the writer starts, so failed certificate/check-in
+runs do not create a partial kit.
+
+## Determinism, privacy, and trust
+
+- No timestamps, randomness, network calls, subprocesses, or runtime AI calls.
+- Stable row order is preserved unless an output explicitly defines a sort.
+- Generated files are hash-owned through `audit.jsonl`.
+- Edited files are never silently overwritten.
+- Output paths are resolved and symlink-checked before writes.
+- `manifest.json` stores certificate hashes, roles, and optional names, never
+  email addresses.
+- `risk.md` and `dashboard.html` are local operator artifacts; do not publish
+  them if their attendee details are not appropriate for your audience.
+- A valid certificate proves only membership in a manifest the recipient trusts;
+  eventkit is not a certificate authority or hosted verification service.
 
 ## Tests
 
-Run the single project check from the repository root:
+Run the project suite from the repository root:
 
 ```sh
 python -m pytest -q
@@ -220,63 +371,81 @@ or:
 make test
 ```
 
-The test suite is offline at runtime and uses only the local source tree.
-`tests/conftest.py` blocks sockets and subprocesses and includes a canary test
-so an accidental network or process dependency fails loudly.
+The test suite blocks sockets and subprocesses through `tests/conftest.py` and
+checks:
 
-## Sample output
-
-A dry run on the included sample reports the deliberate input problems before
-writing anything:
-
-```text
-Dry run: 8 rows, 5 included, 3 excluded, 6 errors, 4 warnings
-create    roster.csv
-create    issues.md
-create    schedule.ics
-create    agenda.html
-create    risk.md
-create    report.md
-create    audit.jsonl
-No files written.
-```
-
-The certificate trust model is intentionally limited: a `VALID` result proves
-only that a code appears in an organizer's published manifest. The recipient
-must obtain that manifest from a source they trust; eventkit will not provide a
-hosted trust service.
+- CSV/BOM/multiline ingestion
+- normalization and EK01–EK08 validation
+- schedule clashes and ICS folding/UTC output
+- check-in and certificate determinism
+- SVG, HTML, manifest, and email post-checks
+- dry runs and byte-identical reruns
+- edited output, audit integrity, stale files, traversal, and symlinks
+- safe cleanup and privacy-safe impact previews
+- the complete roster/check-in/schedule/certificate/email/dashboard flow
 
 ## Docker
 
+Build the pinned Python 3.12 image:
+
 ```sh
 docker build -t eventkit .
+```
+
+Run the offline test suite inside the image:
+
+```sh
 docker run --rm --network none eventkit python -m pytest -q
+```
+
+Check the CLI:
+
+```sh
 docker run --rm --network none eventkit eventkit --version
 ```
 
-The image builds with Python 3.12, installs the pinned test tools, and has no
-network requirement when the commands above run.
-
-## Deployment / release
-
-The current slice is a local CLI rather than a hosted service. For a
-reproducible release or demo, build the image and run it with a mounted event
-directory:
+Run a full demo with a mounted output directory:
 
 ```sh
 docker build -t eventkit .
 docker run --rm --network none \
-  -v "$PWD/demo:/app/demo" \
-  eventkit eventkit run demo/event.toml
+  -e EVENTKIT_SECRET='replace-with-a-local-secret-at-least-16-chars' \
+  -v "$PWD/demo-full:/app/demo-full" \
+  eventkit sh -c 'eventkit init demo-full --full && eventkit run demo-full/event.toml'
 ```
 
-The generated kit remains in the mounted directory. Future certificate
-manifests should be published through an organizer-controlled channel; eventkit
-itself makes no network calls and does not send email.
+The image has no entrypoint; commands remain explicit and reproducible.
 
-## Development notes
+## Development
 
-All runtime code uses the Python standard library. Outputs are derived from
-input bytes and stable row order; no clock, randomness, network, or AI call is
-used by the current slice. Keep the PRD's cut order when adding the next
-feature: codes/certificates and verification are higher priority than polish.
+The source layout is intentionally small and standard-library-only:
+
+```text
+src/eventkit/
+├── cli.py                 # command dispatch and pipeline orchestration
+├── config.py              # TOML loading and path/step validation
+├── csvio.py               # BOM-safe CSV with physical line numbers
+├── validate.py            # roster normalization and issue rules
+├── schedule.py            # sessions and clash detection
+├── calendar.py            # deterministic ICS
+├── agenda.py              # schedule HTML
+├── checkin.py             # printable check-in HTML
+├── certificates.py        # SVG certificates
+├── codes.py               # HMAC codes and manifest verification
+├── emails.py              # deterministic unsent EML drafts
+├── clean.py               # audited safe cleanup
+├── impact.py              # privacy-safe change preview
+├── dashboard.py           # polished offline interface
+├── risk.py                # deterministic risk report
+└── output.py              # safe deterministic writer/audit
+```
+
+Keep runtime dependencies at zero. Add behavior with a focused fixture,
+post-check, and end-to-end assertion. Do not commit credentials or generated
+event kits containing real attendee data.
+
+## License and project status
+
+This repository is an OmniRush Frontier Buildathon project. The current CLI and
+offline artifact pipeline are implemented locally; Docker validation depends on
+having a Docker engine available on the machine running the rebuild.
