@@ -32,12 +32,13 @@ def test_init_and_dry_run_are_safe_and_repeatable(tmp_path, capsys):
         "schedule.ics",
         "agenda.html",
         "risk.md",
+        "dashboard.html",
         "report.md",
         "audit.jsonl",
     }
 
     assert main(["run", str(demo / "event.toml")]) == 0
-    assert "unchanged=7" in capsys.readouterr().out
+    assert "unchanged=8" in capsys.readouterr().out
 
 
 def test_strict_returns_one_but_still_writes_explanations(tmp_path):
@@ -153,6 +154,7 @@ def test_certificate_run_writes_svg_manifest_and_verify_result(tmp_path, monkeyp
     ElementTree.parse(certificate)
     assert (kit / "verify.html").is_file()
     assert (kit / "risk.md").is_file()
+    assert (kit / "dashboard.html").is_file()
     report = (kit / "report.md").read_text(encoding="utf-8")
     assert "Every generated certificate SVG parses as XML." in report
     assert "Every generated certificate code verifies against the manifest." in report
@@ -335,6 +337,7 @@ def test_full_roster_checkin_schedule_certificate_flow_is_repeatable(tmp_path, m
         "agenda.html",
         "risk.md",
         "verify.html",
+        "dashboard.html",
         "manifest.json",
         "certificates",
         "report.md",

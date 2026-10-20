@@ -28,6 +28,14 @@ from .clean import clean_event, clean_output, format_clean_plan, plan_clean
 from .impact import ImpactPreview, ImpactRun, compare_runs, render_impact_preview
 from .risk import render_risk_report
 from .verify_page import render_verify_page
+from .dashboard import (
+    DashboardAttendee,
+    DashboardCertificate,
+    DashboardData,
+    DashboardSession,
+    render_dashboard,
+    verify_dashboard_html,
+)
 from .codes import (
     CertificateRecipient,
     CodeError,
@@ -132,6 +140,10 @@ __all__ = [
     "DEFAULT_HTML_TEMPLATE",
     "DEFAULT_SUBJECT_TEMPLATE",
     "DEFAULT_TEXT_TEMPLATE",
+    "DashboardAttendee",
+    "DashboardCertificate",
+    "DashboardData",
+    "DashboardSession",
     "email_domain",
     "email_domain_suggestion",
     "filter_attendance",
@@ -158,6 +170,7 @@ __all__ = [
     "read_csv_text",
     "recipients_from_roster",
     "render_checkin_html",
+    "render_dashboard",
     "render_email_draft",
     "render_mailmerge_csv",
     "render_agenda",
@@ -175,6 +188,7 @@ __all__ = [
     "validate_roster",
     "verify_agenda_html",
     "verify_checkin_html",
+    "verify_dashboard_html",
     "verify_email_draft",
     "verify_ics",
     "verify",

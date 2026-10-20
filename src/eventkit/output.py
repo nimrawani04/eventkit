@@ -161,6 +161,11 @@ def render_report(
             item for item in verified_items
             if not item.startswith("Risk report")
         ]
+    if "dashboard.html" in kept_paths:
+        verified_items = [
+            item for item in verified_items
+            if not item.startswith("Offline dashboard")
+        ]
     if any(
         path == "manifest.json" or path.startswith("certificates/")
         for path in kept_paths
@@ -269,6 +274,8 @@ def _step_for_path(relative_path: str) -> str:
         return "certificates"
     if relative_path == "risk.md":
         return "report"
+    if relative_path == "dashboard.html":
+        return "report"
     if relative_path == "manifest.json" or relative_path.startswith("certificates/"):
         return "certificates"
     if relative_path == "report.md":
@@ -364,6 +371,7 @@ def plan_or_write_roster(
                 and relative_path != "mailmerge.csv"
                 and not relative_path.startswith("emails/")
                 and relative_path not in {"verify.html", "risk.md"}
+                and relative_path != "dashboard.html"
                 and relative_path not in {"report.md"}
             ):
                 continue

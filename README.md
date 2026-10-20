@@ -20,6 +20,7 @@ The first buildable slice implements the PRD's roster milestone:
 - deterministic UTC `schedule.ics` and grouped, clash-marked `agenda.html`.
 - deterministic unsent `emails/*.eml` drafts and `mailmerge.csv`.
 - safe `clean`, privacy-safe `diff`, `risk.md`, and an offline `verify.html` page.
+- a self-contained luxury-style offline `dashboard.html` interface for the kit.
 
 The hosted/web UI and network delivery are intentionally not part of the
 project: eventkit writes local artifacts only.
@@ -107,6 +108,12 @@ source they trust.
 
 The run also writes `kit/verify.html`, a self-contained browser page that
 checks the public manifest locally with Web Crypto. It makes no network calls.
+
+The run also writes `kit/dashboard.html`, a self-contained professional
+interface for the event kit. It includes overview metrics, attendees, schedule
+clashes, certificate links, risk/unresolved findings, and links to every local
+deliverable. It uses inline CSS and vanilla JavaScript only, so it opens from
+disk without a server or internet connection.
 
 ## Schedule, calendar, and agenda
 

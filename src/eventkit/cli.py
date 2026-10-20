@@ -14,6 +14,7 @@ from .certificate_pipeline import build_certificate_bundle
 from .calendar import render_ics, verify_ics
 from .certificates import certificate_filename
 from .clean import clean_event, format_clean_plan
+from .dashboard import DashboardData, render_dashboard, verify_dashboard_html
 from .codes import manifest_from_json, verify as verify_manifest
 from .config import ConfigError, load_config
 from .csvio import read_csv
@@ -173,6 +174,9 @@ def _run(args: argparse.Namespace) -> int:
     unresolved: list[str] = []
     verified: list[str] = []
     summary: list[str] = []
+    schedule_result = None
+    bundle = None
+    drafts = ()
     schedule_errors = 0
     schedule_clashes = 0
     attendance_issues = 0
@@ -246,6 +250,7 @@ def _run(args: argparse.Namespace) -> int:
         unresolved.extend(bundle.verification_issues)
         verified.extend(bundle.verified)
         if bundle.attendance is not None and bundle.attendance.issues:
+            unresolved.extend(issue.message for issue in bundle.attendance.issues)
             result = RosterResult(
                 result.rows,
                 result.issues + bundle.attendance.issues,
@@ -264,7 +269,6 @@ def _run(args: argparse.Namespace) -> int:
     if "emails" in config.steps:
         if "certificates" not in config.steps:
             raise ConfigError("Email drafts require the certificates step")
-        bundle = bundle if "bundle" in locals() else None
         if bundle is None or not bundle.issued:
             drafts = ()
         else:
@@ -318,6 +322,52 @@ def _run(args: argparse.Namespace) -> int:
         unresolved=unresolved,
     )
     verified.append("Risk report summarizes all enabled-step unresolved conditions.")
+    deliverables = {
+        "roster.csv": True,
+        "issues.md": True,
+        "report.md": True,
+        "audit.jsonl": True,
+        **{path: True for path in extra_files},
+    }
+    deliverables["dashboard.html"] = True
+    dashboard_content = render_dashboard(
+        DashboardData(
+            event_title=config.name,
+            organizer=config.organizer,
+            status="Needs review" if unresolved or result.errors else "Ready",
+            status_detail=(
+                "Review the unresolved findings before publishing."
+                if unresolved or result.errors
+                else "All enabled output checks completed."
+            ),
+            metrics={
+                "registered": len(result.rows),
+                "included": len(result.included_rows),
+                "excluded": len(result.excluded_rows),
+                "warnings": len(result.warnings),
+                "errors": len(result.errors),
+                "sessions": len(schedule_result.sessions) if schedule_result is not None else 0,
+                "certificates": len(bundle.issued) if bundle is not None else 0,
+                "drafts": len(drafts),
+            },
+            risk_summary=(
+                "See risk.md for the deterministic operational risk summary."
+                if unresolved or result.errors
+                else "No unresolved findings were recorded for this run."
+            ),
+            unresolved=unresolved,
+            attendees=result,
+            schedule=schedule_result,
+            certificates=bundle,
+            deliverables=deliverables,
+        )
+    )
+    try:
+        verify_dashboard_html(dashboard_content)
+        verified.append("Offline dashboard HTML parses and contains all run sections.")
+    except ValueError as exc:
+        unresolved.append(f"Dashboard post-check failed: {exc}")
+    extra_files["dashboard.html"] = dashboard_content
     output = plan_or_write_roster(
         config,
         result,
