@@ -4,18 +4,26 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 from pathlib import Path
 
 from . import __version__
 from .agenda import render_agenda, verify_agenda_html
-from .checkin import build_checkin_file
+from .checkin import build_checkin_entries, build_checkin_file
+from .checkin_runtime import CheckinRegistry
 from .certificate_pipeline import build_certificate_bundle
 from .calendar import render_ics, verify_ics
 from .certificates import certificate_filename
 from .clean import clean_event, format_clean_plan
 from .dashboard import DashboardData, render_dashboard, verify_dashboard_html
-from .codes import manifest_from_json, verify as verify_manifest
+from .codes import (
+    canonicalize_code,
+    format_certificate_code,
+    manifest_from_json,
+    secret_from_environment,
+    verify as verify_manifest,
+)
 from .config import ConfigError, load_config
 from .csvio import read_csv
 from .emails import (
@@ -31,6 +39,25 @@ from .risk import render_risk_report
 from .verify_page import render_verify_page
 from .model import RosterResult
 from .output import format_plan, plan_or_write_roster
+from .credentials import (
+    derive_signing_key,
+    issue_revocation,
+    manifest_from_json as signed_manifest_from_json,
+    revocation_to_dict,
+    verify_credential,
+    verify_manifest as verify_signed_manifest,
+)
+from .review import (
+    ResolutionLedger,
+    ReviewError,
+    assert_public_privacy,
+    parse_ledger,
+    render_ledger_bytes,
+    render_review_report,
+    redact_email_pii,
+    unresolved_issues,
+    validate_decisions,
+)
 from .schedule import parse_schedule
 from .validate import validate_roster
 
@@ -138,6 +165,16 @@ def _parser() -> argparse.ArgumentParser:
     diff.add_argument("event_toml", help="path to event.toml")
     diff.add_argument("--include-names", action="store_true", help="include attendee names in the local preview")
 
+    review = subparsers.add_parser("review", help="show the human-review state for an event")
+    review.add_argument("event_toml", help="path to event.toml")
+    review.add_argument("--public", action="store_true", help="redact email-shaped values")
+
+    revoke = subparsers.add_parser("revoke", help="append a signed certificate revocation")
+    revoke.add_argument("event_toml", help="path to event.toml")
+    revoke.add_argument("code", help="certificate code to revoke")
+    revoke.add_argument("--reason", required=True, help="human-readable revocation reason")
+    revoke.add_argument("--out", help="relative revocations JSON path; defaults to configured path or revocations.json")
+
     return parser
 
 
@@ -164,12 +201,34 @@ def _init(directory: str, *, full: bool = False) -> int:
     return 0
 
 
+def _load_review_ledger(config) -> ResolutionLedger:
+    if config.review_path is None or not config.review_path.is_file():
+        return ResolutionLedger()
+    try:
+        return parse_ledger(config.review_path.read_bytes())
+    except ReviewError as exc:
+        raise ConfigError(f"Could not read review ledger {config.review_path}: {exc}") from exc
+
+
+def _public_dashboard_attendees(result: RosterResult) -> tuple[dict[str, object], ...]:
+    return tuple(
+        {
+            "name": row.name,
+            "institution": row.institution,
+            "status": row.status.value,
+            "issues": row.issue_ids,
+        }
+        for row in result.rows
+    )
+
+
 def _run(args: argparse.Namespace) -> int:
     config = load_config(args.event_toml)
     if not config.registrations_path.is_file():
         raise ConfigError(f"Registration CSV not found: {config.registrations_path}")
     table = read_csv(config.registrations_path)
     result = validate_roster(table, columns=config.columns)
+    review_ledger = _load_review_ledger(config)
     extra_files: dict[str, bytes] = {}
     unresolved: list[str] = []
     verified: list[str] = []
@@ -181,6 +240,7 @@ def _run(args: argparse.Namespace) -> int:
     schedule_clashes = 0
     attendance_issues = 0
     certificate_count: int | None = None
+    checkin_entries = ()
     if "schedule" in config.steps:
         if config.schedule_path is None:
             raise ConfigError(
@@ -225,13 +285,40 @@ def _run(args: argparse.Namespace) -> int:
         extra_files["schedule.ics"] = ics_content
         extra_files["agenda.html"] = agenda_content
     if "checkin" in config.steps:
-        checkin_content, _, checkin_verified = build_checkin_file(
+        checkin_content, checkin_entries, checkin_verified = build_checkin_file(
             config.event_id,
             config.name,
             result,
         )
         extra_files["checkin.html"] = checkin_content
         verified.append(checkin_verified)
+    if "checkin-app" in config.steps:
+        if not checkin_entries:
+            checkin_entries = build_checkin_entries(
+                config.event_id,
+                result,
+                secret_from_environment(),
+            )
+        known_codes = {
+            entry.checkin_code: f"R-ROW-{entry.row_number:04d}"
+            for entry in checkin_entries
+        }
+        registry = CheckinRegistry(config.event_id, known_codes, device_id="eventkit")
+        public_attendees = [
+            {
+                "attendee_id": f"R-ROW-{entry.row_number:04d}",
+                "checkin_code": entry.checkin_code,
+                "name": entry.name,
+                "institution": entry.institution,
+            }
+            for entry in checkin_entries
+        ]
+        extra_files["checkin-app.html"] = registry.render_html(
+            title=config.name,
+            public_attendees=public_attendees,
+        )
+        extra_files["checkin.log"] = registry.export_log().encode("utf-8")
+        verified.append("Offline check-in app is self-contained and starts with an empty event log.")
     if "certificates" in config.steps:
         attendance_table = None
         if config.attendance_path is not None:
@@ -313,6 +400,35 @@ def _run(args: argparse.Namespace) -> int:
         manifest = manifest_from_json(extra_files["manifest.json"].decode("utf-8"))
         extra_files["verify.html"] = render_verify_page(manifest.as_dict())
         verified.append("Offline verification page embeds the public manifest.")
+
+    review_open = tuple(result.issues)
+    if review_ledger.records:
+        try:
+            validate_decisions(review_ledger, result.issues)
+            review_open = unresolved_issues(result.issues, review_ledger)
+        except ReviewError as exc:
+            raise ConfigError(f"Review decisions do not match this run: {exc}") from exc
+        resolved_messages = {
+            issue.message
+            for issue in result.issues
+            if issue not in review_open
+        }
+        unresolved = [item for item in unresolved if item not in resolved_messages]
+        unresolved.extend(issue.message for issue in review_open)
+    if config.review_path is not None:
+        extra_files["review.md"] = render_review_report(
+            result.issues,
+            review_ledger,
+            audience=config.privacy_profile,
+        ).encode("utf-8")
+        verified.append("Human-review report records resolved and unresolved findings.")
+
+    strict_errors = tuple(
+        issue for issue in (review_open if review_ledger.records else result.errors)
+        if issue.level.value == "error"
+    )
+    if config.privacy_profile == "public":
+        unresolved = [redact_email_pii(item) for item in unresolved]
     extra_files["risk.md"] = render_risk_report(
         result,
         schedule_errors=schedule_errors,
@@ -320,6 +436,7 @@ def _run(args: argparse.Namespace) -> int:
         attendance_issues=attendance_issues,
         certificates=certificate_count,
         unresolved=unresolved,
+        audience=config.privacy_profile,
     )
     verified.append("Risk report summarizes all enabled-step unresolved conditions.")
     deliverables = {
@@ -334,10 +451,10 @@ def _run(args: argparse.Namespace) -> int:
         DashboardData(
             event_title=config.name,
             organizer=config.organizer,
-            status="Needs review" if unresolved or result.errors else "Ready",
+            status="Needs review" if unresolved or strict_errors else "Ready",
             status_detail=(
                 "Review the unresolved findings before publishing."
-                if unresolved or result.errors
+                if unresolved or strict_errors
                 else "All enabled output checks completed."
             ),
             metrics={
@@ -352,11 +469,15 @@ def _run(args: argparse.Namespace) -> int:
             },
             risk_summary=(
                 "See risk.md for the deterministic operational risk summary."
-                if unresolved or result.errors
+                if unresolved or strict_errors
                 else "No unresolved findings were recorded for this run."
             ),
             unresolved=unresolved,
-            attendees=result,
+            attendees=(
+                _public_dashboard_attendees(result)
+                if config.privacy_profile == "public"
+                else result
+            ),
             schedule=schedule_result,
             certificates=bundle,
             deliverables=deliverables,
@@ -388,7 +509,7 @@ def _run(args: argparse.Namespace) -> int:
     print(format_plan(output))
     if args.dry_run:
         print("No files written.")
-    if args.strict and result.errors:
+    if args.strict and strict_errors:
         return 1
     return 0
 
@@ -396,9 +517,48 @@ def _run(args: argparse.Namespace) -> int:
 def _verify(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest).expanduser().resolve()
     try:
-        manifest = manifest_from_json(manifest_path.read_text(encoding="utf-8"))
+        manifest_text = manifest_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise ConfigError(f"Could not read manifest {args.manifest}: {exc}") from exc
+    try:
+        signed_manifest = signed_manifest_from_json(manifest_text)
+    except (ReviewError, ValueError, TypeError):
+        signed_manifest = None
+    if signed_manifest is not None:
+        if not verify_signed_manifest(signed_manifest):
+            print("INVALID")
+            return 1
+        try:
+            code = canonicalize_code(args.code)
+        except ValueError:
+            code = ""
+        matching = next(
+            (
+                credential
+                for credential in signed_manifest.credentials
+                if canonicalize_code(credential.code) == code
+            ),
+            None,
+        )
+        if matching is None or not verify_credential(
+            matching,
+            signed_manifest.public_key,
+            event_id=signed_manifest.event_id,
+            revocations=signed_manifest.revocations,
+        ):
+            print("INVALID")
+            return 1
+        print("VALID")
+        print(f"Event: {signed_manifest.event_id}")
+        print(f"Role: {matching.role}")
+        if matching.holder is not None:
+            print(f"Name: {matching.holder}")
+        print(f"Issuer: {signed_manifest.issuer_key_id}")
+        return 0
+    try:
+        manifest = manifest_from_json(manifest_text)
+    except (ValueError, TypeError) as exc:
+        raise ConfigError(f"Manifest is not a supported eventkit manifest: {args.manifest}") from exc
     result = verify_manifest(args.code, manifest)
     if not result.valid:
         print("INVALID")
@@ -409,6 +569,74 @@ def _verify(args: argparse.Namespace) -> int:
         print(f"Role: {result.role}")
     if result.name is not None:
         print(f"Name: {result.name}")
+    return 0
+
+
+def _review(args: argparse.Namespace) -> int:
+    config = load_config(args.event_toml)
+    if not config.registrations_path.is_file():
+        raise ConfigError(f"Registration CSV not found: {config.registrations_path}")
+    result = validate_roster(read_csv(config.registrations_path), columns=config.columns)
+    ledger = _load_review_ledger(config)
+    if ledger.records:
+        try:
+            validate_decisions(ledger, result.issues)
+        except ReviewError as exc:
+            raise ConfigError(f"Review decisions do not match this run: {exc}") from exc
+    report = render_review_report(
+        result.issues,
+        ledger,
+        audience="public" if args.public else config.privacy_profile,
+    )
+    print(report, end="")
+    return 0
+
+
+def _revoke(args: argparse.Namespace) -> int:
+    config = load_config(args.event_toml)
+    secret = secret_from_environment()
+    root = config.path.parent.resolve()
+    configured = config.revocations_path
+    target = Path(args.out).expanduser() if args.out else (
+        configured if configured is not None else root / "revocations.json"
+    )
+    target = target.resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ConfigError("Revocations output must stay inside the event directory") from exc
+    existing: list[dict[str, object]] = []
+    if target.exists():
+        try:
+            raw = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ConfigError(f"Could not read existing revocations file: {exc}") from exc
+        values = raw.get("revocations", []) if isinstance(raw, dict) else raw
+        if not isinstance(values, list) or not all(isinstance(item, dict) for item in values):
+            raise ConfigError("Revocations file must contain a list or a revocations list")
+        existing = list(values)
+    try:
+        normalized_code = format_certificate_code(canonicalize_code(args.code))
+    except ValueError as exc:
+        raise ConfigError(f"Invalid certificate code: {args.code}") from exc
+    if any(item.get("code") == normalized_code for item in existing):
+        raise ConfigError(f"Certificate code is already revoked: {normalized_code}")
+    revocation = issue_revocation(
+        config.event_id,
+        normalized_code,
+        derive_signing_key(secret),
+        reason=args.reason,
+    )
+    existing.append(revocation_to_dict(revocation))
+    rendered = json.dumps(
+        {"event_id": config.event_id, "revocations": existing},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ) + "\n"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(rendered, encoding="utf-8", newline="")
+    print(f"Created signed revocation in {target}")
     return 0
 
 
@@ -454,9 +682,21 @@ def main(argv: list[str] | None = None) -> int:
             return _clean(args)
         if args.command == "diff":
             return _diff(args)
+        if args.command == "review":
+            return _review(args)
+        if args.command == "revoke":
+            return _revoke(args)
         parser.print_help()
         return 2
-    except (ConfigError, FileNotFoundError, OSError, UnicodeError, ValueError, csv.Error) as exc:
+    except (
+        ConfigError,
+        FileNotFoundError,
+        OSError,
+        UnicodeError,
+        ValueError,
+        ReviewError,
+        csv.Error,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

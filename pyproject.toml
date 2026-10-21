@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eventkit"
-version = "0.1.0"
-description = "Standard-library event registration roster processing"
+version = "0.2.0"
+description = "Offline, explainable event operations and credential verification"
 requires-python = ">=3.12"
 dependencies = []
 

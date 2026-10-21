@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .model import IssueLevel, RosterResult
+from .review import redact_email_pii
 
 
 def render_risk_report(
@@ -15,6 +16,7 @@ def render_risk_report(
     attendance_issues: int = 0,
     certificates: int | None = None,
     unresolved: Iterable[str] = (),
+    audience: str = "private",
 ) -> bytes:
     """Render a stable human-readable risk summary without personal data."""
 
@@ -54,7 +56,11 @@ def render_risk_report(
         "## Risks",
         "",
     ]
-    lines.extend(f"- **{level}** — {message}" for level, message in risks)
+    lines.extend(
+        f"- **{level}** — "
+        + (redact_email_pii(message) if audience == "public" else message)
+        for level, message in risks
+    )
     lines.append("")
     return "\n".join(lines).encode("utf-8")
 

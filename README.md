@@ -4,8 +4,9 @@
 
 eventkit turns registration, attendance, and schedule exports into a complete
 local event kit: a cleaned roster, explained issues, a printable check-in sheet,
-calendar and agenda files, offline-verifiable certificates, unsent email
-drafts, a risk report, and a polished offline dashboard.
+calendar and agenda files, offline-verifiable certificates, signed credentials,
+unsent email drafts, an offline event-day check-in app, a human-review ledger,
+a risk report, and a polished offline dashboard.
 
 It is deliberately **offline-first**: runtime code uses the Python standard
 library, makes no network or AI calls, sends no email, and produces byte-stable
@@ -24,7 +25,10 @@ artifacts for the same inputs.
 | Calendar and agenda | `schedule.ics`, `agenda.html` |
 | Certificates | `certificates/*.svg`, `manifest.json` |
 | Offline verification | `eventkit verify`, `verify.html` |
+| Signed credentials | `credentials.json`, Ed25519 verification, revocations |
 | Email drafts | `emails/*.eml`, `mailmerge.csv` |
+| Event-day operations | `checkin-app.html`, `checkin.log` |
+| Human review | `review.jsonl`, `review.md`, `eventkit review` |
 | Operational safety | dry run, audit log, safe `clean` |
 | Change visibility | privacy-safe `eventkit diff` |
 | Executive view | `dashboard.html`, `risk.md`, `report.md` |
@@ -133,6 +137,8 @@ eventkit run EVENT_TOML [--dry-run] [--strict] [--out DIR]
 eventkit verify CODE --manifest PATH
 eventkit clean EVENT_TOML [--dry-run]
 eventkit diff EVENT_TOML [--include-names]
+eventkit review EVENT_TOML [--public]
+eventkit revoke EVENT_TOML CODE --reason TEXT [--out PATH]
 ```
 
 ### `init`
@@ -167,6 +173,11 @@ The command normalizes case, spaces, hyphens, and Crockford ambiguous
 characters. A valid result proves only that the code is present in the
 manifest supplied to the command. The organizer must publish that manifest
 through a channel the recipient trusts.
+
+When `[certificates].signed = true`, point the command at `kit/credentials.json`
+instead. The signed package is checked against its embedded Ed25519 public key,
+event ID, credential signatures, expiry and signed revocations. The signing key
+is derived from `EVENTKIT_SECRET` and is never written to the package.
 
 ### `clean`
 
@@ -206,6 +217,7 @@ utc_offset = "+05:30"
 registrations = "data/registrations.csv"
 attendance = "data/attendance.csv"
 schedule = "data/schedule.csv"
+review = "review.jsonl"
 
 [columns]
 name = "Full Name"
@@ -217,6 +229,8 @@ institution = "College"
 title = "Certificate of Participation"
 issue_to = "attended"
 manifest_names = true
+signed = true
+revocations = "data/revocations.json"
 
 [emails]
 subject = "Your {event} certificate"
@@ -225,17 +239,52 @@ html = "<p>Hello {name}</p><p>Your code is <strong>{code}</strong>.</p>"
 
 [output]
 dir = "kit"
-steps = ["roster", "checkin", "schedule", "certificates", "emails"]
+profile = "private"
+steps = ["roster", "checkin", "checkin-app", "schedule", "certificates", "emails"]
 ```
 
 Supported output steps are:
 
 ```text
-roster, checkin, schedule, certificates, emails
+roster, checkin, checkin-app, schedule, certificates, emails
 ```
 
 `emails` requires `certificates` because drafts attach the matching SVG when
 one is available.
+
+`checkin-app` creates a self-contained event-day HTML surface. It supports local
+search, check-in/undo actions, browser-local persistence and JSONL export. It
+does not require a server or network connection.
+
+## Signed credentials and revocations
+
+Enable the signed package with `[certificates].signed = true`. Create a signed
+revocation without hand-editing signatures:
+
+```sh
+eventkit revoke event.toml ABCD-1234-EFGH --reason "replacement issued"
+```
+
+If no `certificates.revocations` path is configured, the command writes
+`revocations.json` beside `event.toml`. Rerun the certificate pipeline to
+publish the updated package. A revoked credential returns `INVALID`.
+
+## Human review and privacy profiles
+
+The optional `input.review` file is a deterministic JSONL ledger. Each decision
+records an issue code, source row, action (`accept`, `reject`, `defer`, or
+`replace`), reason and reviewer. Inspect it with:
+
+```sh
+eventkit review event.toml
+eventkit review event.toml --public
+```
+
+Use `output.profile = "public"` for a fail-closed public package. Email and
+phone columns are omitted from the roster, email-shaped values are redacted in
+reports, private email drafts are refused, and every generated text file is
+scanned before writing. The default `private` profile preserves the complete
+organizer-facing data.
 
 ## Input files
 
@@ -299,17 +348,21 @@ kit/
 ├── roster.csv              # every registration with status and issues
 ├── issues.md               # row-level explanations and suggested fixes
 ├── checkin.html            # printable included-attendee sheet
+├── checkin-app.html        # searchable offline event-day app
+├── checkin.log             # importable JSONL event log
 ├── schedule.ics            # deterministic UTC calendar
 ├── agenda.html             # grouped local-time agenda
 ├── certificates/
 │   └── *.svg               # deterministic A4 landscape certificates
 ├── manifest.json            # public certificate hashes; no emails
+├── credentials.json         # optional signed credential package
 ├── verify.html              # browser-based offline verifier
 ├── emails/
 │   └── *.eml               # unsent draft messages
 ├── mailmerge.csv            # draft metadata only
 ├── risk.md                 # deterministic operational risk summary
 ├── report.md               # verified and unresolved run report
+├── review.md               # optional human-review resolution report
 └── audit.jsonl             # ownership hashes and input digest
 ```
 
@@ -352,10 +405,18 @@ runs do not create a partial kit.
 - Output paths are resolved and symlink-checked before writes.
 - `manifest.json` stores certificate hashes, roles, and optional names, never
   email addresses.
+- `credentials.json` stores signed public credentials and revocations, never
+  email addresses. Its Ed25519 signature protects the package against edited
+  manifests.
+- Public profiles omit email and phone fields and fail closed if an email-shaped
+  value remains in a generated file.
 - `risk.md` and `dashboard.html` are local operator artifacts; do not publish
   them if their attendee details are not appropriate for your audience.
-- A valid certificate proves only membership in a manifest the recipient trusts;
-  eventkit is not a certificate authority or hosted verification service.
+- A legacy `manifest.json` result proves only membership in a manifest the
+  recipient trusts; eventkit is not a certificate authority or hosted
+  verification service. A signed `credentials.json` package additionally
+  proves that the package and requested credential were signed by its issuer
+  key and were not revoked.
 
 ## Tests
 

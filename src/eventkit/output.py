@@ -14,6 +14,7 @@ from typing import Iterable
 
 from .config import EventConfig
 from .model import IssueLevel, RosterResult
+from .review import assert_public_privacy, redact_email_pii
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,25 +41,57 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def render_roster_csv(result: RosterResult) -> bytes:
-    """Render every source row, including excluded rows, as deterministic CSV."""
+def _public_attendee_id(email: str, row_number: int) -> str:
+    """Return a stable public identifier without exposing the email key."""
+
+    normalized = email.strip().lower()
+    if not normalized:
+        return f"R-ROW-{row_number:04d}"
+    digest = hashlib.sha256(
+        ("registration\0" + normalized).encode("utf-8")
+    ).hexdigest()[:12].upper()
+    return f"R-{digest}"
+
+
+def render_roster_csv(result: RosterResult, *, audience: str = "private") -> bytes:
+    """Render every source row as deterministic CSV.
+
+    Public output deliberately omits email and phone columns.  The private
+    profile retains the backwards-compatible full roster.
+    """
 
     stream = io.StringIO(newline="")
     writer = csv.writer(stream, lineterminator="\n")
-    writer.writerow(("row", "name", "email", "phone", "institution", "status", "issues"))
+    if audience == "public":
+        writer.writerow(("row", "attendee_id", "name", "institution", "status", "issues"))
+    else:
+        writer.writerow(("row", "name", "email", "phone", "institution", "status", "issues"))
     for row in result.rows:
-        writer.writerow(
-            (
-                row.row_number,
-                row.name,
-                row.email,
-                row.phone,
-                row.institution,
-                row.status.value,
-                ",".join(row.issue_ids),
+        if audience == "public":
+            writer.writerow(
+                (
+                    row.row_number,
+                    _public_attendee_id(row.attendee.normalized_email, row.row_number),
+                    row.name,
+                    row.institution,
+                    row.status.value,
+                    ",".join(row.issue_ids),
+                )
             )
-        )
-    return stream.getvalue().encode("utf-8")
+        else:
+            writer.writerow(
+                (
+                    row.row_number,
+                    row.name,
+                    row.email,
+                    row.phone,
+                    row.institution,
+                    row.status.value,
+                    ",".join(row.issue_ids),
+                )
+            )
+    rendered = stream.getvalue().encode("utf-8")
+    return rendered if audience == "private" else redact_email_pii(rendered.decode("utf-8")).encode("utf-8")
 
 
 def _issue_bullet(issue: object) -> str:
@@ -76,7 +109,7 @@ def _issue_bullet(issue: object) -> str:
     )
 
 
-def render_issues_md(result: RosterResult) -> bytes:
+def render_issues_md(result: RosterResult, *, audience: str = "private") -> bytes:
     """Render grouped issue explanations with source row numbers."""
 
     lines = ["# Registration issues", "", "Every source row remains in `roster.csv`; excluded rows are marked there.", ""]
@@ -95,7 +128,10 @@ def render_issues_md(result: RosterResult) -> bytes:
     else:
         lines.append("None.")
     lines.append("")
-    return "\n".join(lines).encode("utf-8")
+    rendered = "\n".join(lines)
+    if audience == "public":
+        rendered = redact_email_pii(rendered)
+    return rendered.encode("utf-8")
 
 
 def render_report(
@@ -104,6 +140,7 @@ def render_report(
     unresolved: Iterable[str],
     verified: Iterable[str] = (),
     summary: Iterable[str] = (),
+    audience: str = "private",
 ) -> bytes:
     """Render the first-slice report with explicit verified/unresolved parts."""
 
@@ -184,7 +221,10 @@ def render_report(
     else:
         lines.append("None.")
     lines.append("")
-    return "\n".join(lines).encode("utf-8")
+    rendered = "\n".join(lines)
+    if audience == "public":
+        rendered = redact_email_pii(rendered)
+    return rendered.encode("utf-8")
 
 
 def _safe_target(root: Path, relative_path: str) -> Path:
@@ -264,7 +304,7 @@ def _file_action(
 def _step_for_path(relative_path: str) -> str:
     """Map generated file paths to their pipeline step for the audit log."""
 
-    if relative_path == "checkin.html":
+    if relative_path in {"checkin.html", "checkin-app.html", "checkin.log"}:
         return "checkin"
     if relative_path in {"schedule.ics", "agenda.html"}:
         return "schedule"
@@ -277,6 +317,8 @@ def _step_for_path(relative_path: str) -> str:
     if relative_path == "dashboard.html":
         return "report"
     if relative_path == "manifest.json" or relative_path.startswith("certificates/"):
+        return "certificates"
+    if relative_path == "credentials.json":
         return "certificates"
     if relative_path == "report.md":
         return "report"
@@ -310,6 +352,10 @@ def _input_digest(config: EventConfig) -> str:
         paths.append(config.attendance_path)
     if config.schedule_path is not None:
         paths.append(config.schedule_path)
+    if config.review_path is not None:
+        paths.append(config.review_path)
+    if config.revocations_path is not None:
+        paths.append(config.revocations_path)
     for path in paths:
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
@@ -336,8 +382,8 @@ def plan_or_write_roster(
     _safe_target(root, "audit.jsonl")
     previous_hashes, audit_owned = _read_audit(root / "audit.jsonl")
     file_contents = {
-        "roster.csv": render_roster_csv(result),
-        "issues.md": render_issues_md(result),
+        "roster.csv": render_roster_csv(result, audience=config.privacy_profile),
+        "issues.md": render_issues_md(result, audience=config.privacy_profile),
     }
     for relative_path, content in (extra_files or {}).items():
         _safe_target(root, relative_path)
@@ -364,9 +410,9 @@ def plan_or_write_roster(
             if relative_path in current_paths or relative_path == "audit.jsonl":
                 continue
             if (
-                relative_path != "manifest.json"
+                relative_path not in {"manifest.json", "credentials.json"}
                 and not relative_path.startswith("certificates/")
-                and relative_path != "checkin.html"
+                and relative_path not in {"checkin.html", "checkin-app.html", "checkin.log"}
                 and relative_path not in {"schedule.ics", "agenda.html"}
                 and relative_path != "mailmerge.csv"
                 and not relative_path.startswith("emails/")
@@ -406,8 +452,19 @@ def plan_or_write_roster(
         report_unresolved,
         extra_verified,
         extra_summary,
+        audience=config.privacy_profile,
     )
     file_contents["report.md"] = report_content
+    if config.privacy_profile == "public":
+        for relative_path, content in file_contents.items():
+            try:
+                assert_public_privacy(content.decode("utf-8"))
+            except UnicodeDecodeError as exc:
+                raise ValueError(
+                    f"Public output must be UTF-8 text for privacy checking: {relative_path}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"Public output contains private data: {relative_path}: {exc}") from exc
     actions = list(
         _file_action(
             root,

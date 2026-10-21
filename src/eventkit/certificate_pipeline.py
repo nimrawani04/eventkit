@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from xml.etree import ElementTree
 
 from .attendance import AttendanceResult, filter_attendance, recipients_from_roster
@@ -17,6 +18,14 @@ from .codes import (
     verify_code,
 )
 from .config import EventConfig
+from .credentials import (
+    derive_signing_key,
+    issue_credential,
+    manifest_to_bytes as signed_manifest_to_bytes,
+    revocation_from_dict,
+    sign_manifest,
+    verify_manifest,
+)
 from .csvio import CsvTable
 from .model import RosterResult
 
@@ -85,6 +94,36 @@ def build_certificate_bundle(
     files: dict[str, bytes] = {
         "manifest.json": manifest_to_json(manifest).encode("utf-8"),
     }
+    signed_manifest = None
+    if config.signed_credentials:
+        signing_key = derive_signing_key(secret)
+        revocations = ()
+        if config.revocations_path is not None and config.revocations_path.is_file():
+            try:
+                raw = json.loads(config.revocations_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise ValueError(f"Could not read revocations file: {exc}") from exc
+            raw_items = raw.get("revocations", []) if isinstance(raw, dict) else raw
+            if not isinstance(raw_items, list):
+                raise ValueError("Revocations file must contain a list or a revocations list")
+            revocations = tuple(revocation_from_dict(item) for item in raw_items)
+        signed_credentials = tuple(
+            issue_credential(
+                config.event_id,
+                certificate.code,
+                certificate.role,
+                signing_key,
+                holder=certificate.name if config.manifest_names else None,
+            )
+            for certificate in issued
+        )
+        signed_manifest = sign_manifest(
+            config.event_id,
+            signed_credentials,
+            signing_key,
+            revocations=revocations,
+        )
+        files["credentials.json"] = signed_manifest_to_bytes(signed_manifest)
     for certificate in issued:
         name = certificate.name or ""
         files[
@@ -107,6 +146,9 @@ def build_certificate_bundle(
                 raise ValueError(f"certificate code did not verify: {certificate.code}")
         if len(issued) != manifest.certificate_count:
             raise ValueError("certificate count does not match manifest")
+        if signed_manifest is not None:
+            if not verify_manifest(signed_manifest, event_id=config.event_id):
+                raise ValueError("signed credential manifest did not verify")
     except (ElementTree.ParseError, ValueError) as exc:
         verification_issues.append(f"Certificate post-check failed: {exc}")
     else:
@@ -117,6 +159,8 @@ def build_certificate_bundle(
                 "Certificate count matches the manifest.",
             )
         )
+        if signed_manifest is not None:
+            verified.append("Signed credential manifest verifies against its embedded public key.")
     return CertificateBundle(
         files=files,
         attendance=attendance,

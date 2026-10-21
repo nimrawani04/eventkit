@@ -104,6 +104,7 @@ _DELIVERABLES: tuple[tuple[str, str, str], ...] = (
     ("schedule.ics", "Schedule", "Calendar schedule"),
     ("agenda.html", "Agenda", "Session agenda"),
     ("manifest.json", "Manifest", "Certificate verification manifest"),
+    ("credentials.json", "Signed credentials", "Cryptographically signed credential package"),
     ("verify.html", "Verify", "Offline certificate checker"),
     ("risk.md", "Risk", "Risk and unresolved findings"),
     ("report.md", "Report", "Run report"),

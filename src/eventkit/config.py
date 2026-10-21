@@ -33,6 +33,10 @@ class EventConfig:
     email_subject: str
     email_text: str
     email_html: str
+    review_path: Path | None = None
+    privacy_profile: str = "private"
+    signed_credentials: bool = False
+    revocations_path: Path | None = None
 
 
 def _text(value: Any, *, field: str, required: bool = True) -> str:
@@ -88,11 +92,14 @@ def load_config(path: str | Path) -> EventConfig:
     if not isinstance(steps_value, list) or not all(isinstance(step, str) for step in steps_value):
         raise ConfigError("[output].steps must be a list of strings")
     steps = tuple(step.strip().lower() for step in steps_value if step.strip())
-    unsupported = sorted(set(steps) - {"roster", "checkin", "schedule", "certificates", "emails"})
+    unsupported = sorted(
+        set(steps)
+        - {"roster", "checkin", "checkin-app", "schedule", "certificates", "emails"}
+    )
     if unsupported:
         joined = ", ".join(unsupported)
         raise ConfigError(
-            f"Unsupported step(s) in this build: {joined}; currently available: roster, checkin, schedule, certificates, emails"
+            f"Unsupported step(s) in this build: {joined}; currently available: roster, checkin, checkin-app, schedule, certificates, emails"
         )
     if "roster" not in steps:
         raise ConfigError("[output].steps must include 'roster' for this build")
@@ -115,7 +122,20 @@ def load_config(path: str | Path) -> EventConfig:
         if schedule_value is not None
         else None
     )
+    review_value = inputs.get("review")
+    review_path = (
+        _relative_path(root, review_value, field="input.review")
+        if review_value is not None
+        else None
+    )
     output_dir = _relative_path(root, output.get("dir", "kit"), field="output.dir")
+
+    privacy_profile = _text(
+        output.get("profile", "private"),
+        field="output.profile",
+    ).lower()
+    if privacy_profile not in {"private", "public"}:
+        raise ConfigError("output.profile must be 'private' or 'public'")
 
     certificates = data.get("certificates", {})
     if not isinstance(certificates, dict):
@@ -131,10 +151,21 @@ def load_config(path: str | Path) -> EventConfig:
     manifest_names = certificates.get("manifest_names", True)
     if not isinstance(manifest_names, bool):
         raise ConfigError("certificates.manifest_names must be true or false")
+    signed_credentials = certificates.get("signed", False)
+    if not isinstance(signed_credentials, bool):
+        raise ConfigError("certificates.signed must be true or false")
+    revocations_value = certificates.get("revocations")
+    revocations_path = (
+        _relative_path(root, revocations_value, field="certificates.revocations")
+        if revocations_value is not None
+        else None
+    )
 
     emails = data.get("emails", {})
     if not isinstance(emails, dict):
         raise ConfigError("[emails] must be a table")
+    if privacy_profile == "public" and "emails" in steps:
+        raise ConfigError("output.profile='public' cannot generate private email drafts")
     email_subject = _text(
         emails.get("subject", "Your {event} certificate"),
         field="emails.subject",
@@ -178,4 +209,8 @@ def load_config(path: str | Path) -> EventConfig:
         email_subject=email_subject,
         email_text=email_text,
         email_html=email_html,
+        review_path=review_path,
+        privacy_profile=privacy_profile,
+        signed_credentials=signed_credentials,
+        revocations_path=revocations_path,
     )

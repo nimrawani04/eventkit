@@ -1,10 +1,10 @@
 # eventkit: Product Requirements Document
 
-Author: Milad | Version 1.0 | 17 Oct 2026 | Event: OmniRush Frontier Buildathon 2026, Agents & Automation track
+Author: Milad | Version 1.1 | 21 Oct 2026 | Event: OmniRush Frontier Buildathon 2026, Agents & Automation track
 
 ## 1. Summary
 
-eventkit is a command-line tool that does a campus event's paperwork start to finish. It reads a registration CSV, a schedule CSV and an optional attendance CSV, and writes a ready-to-use kit: a cleaned roster with every problem explained, a printable check-in sheet, a calendar file and agenda with schedule clashes flagged, email drafts, and certificates carrying codes that anyone can verify offline.
+eventkit is a command-line tool that does a campus event's paperwork start to finish. It reads a registration CSV, a schedule CSV and an optional attendance CSV, and writes a ready-to-use kit: a cleaned roster with every problem explained, a printable check-in sheet, a searchable offline event-day check-in surface, a calendar file and agenda with schedule clashes flagged, email drafts, signed credentials with revocations, and certificates carrying codes that anyone can verify offline.
 
 It uses only the Python standard library, makes no network calls and no AI calls at runtime, and produces byte-identical output for the same inputs. It supports dry runs, an audit log and a safe undo. Every run ends with a report that separates what was verified from what still needs a human.
 
@@ -29,7 +29,7 @@ Most tools cover only one piece of this, and few explain what they changed. even
 - No sending of email. eventkit only writes drafts.
 - No network access, no calls to any AI or email service at runtime.
 - No PDF output. Certificates are SVG and can be printed to PDF from a browser.
-- No web UI, database or hosted service.
+- No hosted web UI, database or hosted service. Generated local HTML surfaces are allowed and must remain self-contained.
 - No payments, ticketing or QR codes.
 
 ### Success metrics
@@ -76,6 +76,8 @@ eventkit init [DIR]
 eventkit run EVENT_TOML [--dry-run] [--strict] [--out DIR]
 eventkit verify CODE --manifest PATH
 eventkit clean EVENT_TOML [--dry-run]
+eventkit review EVENT_TOML [--public]
+eventkit revoke EVENT_TOML CODE --reason TEXT [--out PATH]
 eventkit --version
 eventkit --help
 ```
@@ -103,6 +105,7 @@ utc_offset = '+05:30'
 registrations = 'data/registrations.csv'
 schedule = 'data/schedule.csv'
 attendance = 'data/attendance.csv'
+review = 'review.jsonl'
 
 [columns]
 name = 'Full Name'
@@ -114,10 +117,13 @@ institution = 'College'
 title = 'Certificate of Participation'
 issue_to = 'attended'
 manifest_names = true
+signed = true
+revocations = 'data/revocations.json'
 
 [output]
 dir = 'kit'
-steps = ['roster', 'checkin', 'schedule', 'emails', 'certificates', 'report']
+profile = 'private'
+steps = ['roster', 'checkin', 'checkin-app', 'schedule', 'emails', 'certificates', 'report']
 ```
 
 | File | Required columns | Notes |
@@ -158,9 +164,10 @@ All CSVs are read as UTF-8 with or without a BOM. Quoted fields with commas and 
 | --- | --- | --- |
 | roster | `roster.csv`, `issues.md` | As above |
 | checkin | `checkin.html` | Sorted by name, then code. Columns: number, name, institution, check-in code, tick box. Print stylesheet. Excluded rows omitted |
+| checkin-app | `checkin-app.html`, `checkin.log` | Self-contained searchable event-day surface. Local check-in/undo actions persist in browser storage and export JSONL. Unknown codes and duplicate transitions are rejected by the runtime API |
 | schedule | `schedule.ics`, `agenda.html` | UTC times, CRLF line endings, lines folded at 75 octets, text escaped. UID is a hash of event id, title and start. DTSTAMP is derived from the start time, so output is deterministic. Agenda is grouped by day with clashes marked |
 | emails | `emails/*.eml`, `mailmerge.csv` | Drafts only. Built with the standard `email` package, with an `X-Unsent` header, no Date header, template fields `{name}`, `{event}`, `{code}`, and the certificate attached |
-| certificates | `certificates/*.svg`, `manifest.json` | See 6.6 |
+| certificates | `certificates/*.svg`, `manifest.json`, optional `credentials.json` | See 6.6. Signed credentials are enabled with `[certificates].signed = true` |
 | report | `report.md` | See 6.8 |
 
 Generated filenames are an ASCII slug of the name plus the check-in code. If the slug is empty, as with non-Latin names, the name part is `attendee`.
@@ -173,6 +180,7 @@ Generated filenames are an ASCII slug of the name plus the check-in code. If the
 - `manifest.json` holds the event id and name, the number of certificates and, per certificate, the SHA-256 of the canonical code, the role and, when `manifest_names` is true, the holder's name. It never contains emails.
 - `eventkit verify CODE --manifest PATH` normalizes the input (case, hyphens, spaces, I and L to 1, O to 0), hashes it and looks it up. It prints VALID with event, role and name, or INVALID.
 - Trust model: a valid result proves the code is in the manifest. The organizer must publish the manifest somewhere recipients trust. This limit is stated in the README.
+- When signed credentials are enabled, eventkit derives a deterministic Ed25519 signing key from `EVENTKIT_SECRET` and writes a signed `credentials.json` package containing the public key, signed credentials and signed revocations. Verification checks the package signature and then checks the requested credential's signature, event, expiry and revocation status. Private email addresses never enter the package.
 - SVG certificates are A4 landscape with XML-escaped text. The name font shrinks with length, and `unicode-bidi: plaintext` keeps right-to-left names in the correct order. A system font stack is used and no fonts are embedded.
 
 ### 6.7 Safety: dry run, audit and clean
@@ -192,6 +200,21 @@ Generated filenames are an ASCII slug of the name plus the check-in code. If the
 - **Unresolved:** every error and warning that needs a human, schedule clashes, skipped steps with reasons, and kept files the user edited.
 
 If a post-check fails, its claim moves from Verified to Unresolved. The report never states something the run did not check.
+
+### 6.9 Human review and privacy profiles
+
+- `input.review` may point to a deterministic JSONL ledger of `accept`,
+  `reject`, `defer`, or `replace` decisions. Every decision requires a reason
+  and reviewer. Replacement values are applied only to copied rows; source CSV
+  data is never silently changed.
+- `eventkit review EVENT_TOML` renders the current resolved/unresolved state.
+  A deferred or missing decision remains unresolved. With a configured ledger,
+  `run --strict` evaluates unresolved error findings rather than blindly
+  failing on an error already accepted by a named reviewer.
+- `[output].profile` is `private` by default. The `public` profile omits email
+  and phone columns, redacts email-shaped values from reports, refuses private
+  email drafts, and scans generated text before writing. Public output fails
+  closed if privacy checking finds an email-shaped value.
 
 ## 7. Non-functional requirements
 
@@ -216,6 +239,9 @@ eventkit/
     validate.py     roster issues and de-duplication
     schedule.py     parsing, clash detection
     codes.py        HMAC codes, Crockford base32, manifest
+    credentials.py  Ed25519 credentials, signed packages, revocations
+    checkin_runtime.py  offline event-day records, merge, and app
+    review.py       human-review ledger and privacy checks
     output.py       safe writer, audit log, clean
     steps/          roster  checkin  schedule  emails  certificates  report
     render/         svg.py  html.py  eml.py  ics.py (pure functions)
