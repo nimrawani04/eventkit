@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="description" content="EventKit — private, explainable event operations in your browser.">
+  <title>EventKit — private event operations</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-frame">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" role="img"><path d="M16 2.75 28 7.8v8.03c0 6.2-4.46 11.1-12 13.42C8.46 26.93 4 22.03 4 15.83V7.8l12-5.05Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m10 16.1 3.45 3.45L22.55 10.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"/></svg>
+        </div>
+        <div>
+          <strong>eventkit</strong>
+          <span>local operations</span>
+        </div>
+      </div>
+
+      <div class="privacy-pill"><span class="live-dot"></span><span>Runs in your browser</span></div>
+
+      <nav class="side-nav" aria-label="Workspace sections">
+        <button class="nav-item is-active" data-view="overview"><span class="nav-icon">⌂</span><span>Overview</span><kbd>1</kbd></button>
+        <button class="nav-item" data-view="roster"><span class="nav-icon">♧</span><span>Roster</span><span class="nav-count" id="nav-roster-count">0</span></button>
+        <button class="nav-item" data-view="schedule"><span class="nav-icon">◷</span><span>Schedule</span><span class="nav-count" id="nav-schedule-count">0</span></button>
+        <button class="nav-item" data-view="checkin"><span class="nav-icon">✓</span><span>Check-in</span><span class="nav-count nav-count-good" id="nav-checkin-count">0</span></button>
+        <button class="nav-item" data-view="certificates"><span class="nav-icon">◇</span><span>Credentials</span><span class="nav-count" id="nav-certificate-count">0</span></button>
+        <button class="nav-item" data-view="exports"><span class="nav-icon">↗</span><span>Export kit</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <button class="sidebar-help" data-action="show-about"><span>?</span><span>How it works</span></button>
+        <div class="version-note">EVENTKIT <span>0.2.0 WEB</span></div>
+      </div>
+    </aside>
+
+    <div class="mobile-topbar">
+      <button class="icon-button" id="mobile-menu" aria-label="Open navigation">☰</button>
+      <div class="mobile-brand"><span class="brand-dot"></span><strong>eventkit</strong></div>
+      <button class="icon-button" data-action="reset-workspace" aria-label="Reset workspace">↺</button>
+    </div>
+
+    <main class="workspace">
+      <header class="workspace-header">
+        <div>
+          <p class="breadcrumb"><span>WORKSPACE</span><i>/</i><span id="header-event-id">NEW EVENT</span></p>
+          <h1 id="header-event-name">Your event, under control.</h1>
+        </div>
+        <div class="header-actions">
+          <span class="secure-label"><span class="secure-icon">⌁</span> Private by default</span>
+          <button class="button button-ghost" data-action="load-demo"><span>✦</span> Load demo</button>
+          <button class="button button-dark" data-action="reset-workspace">New event <span>+</span></button>
+        </div>
+      </header>
+
+      <section class="setup-banner" id="setup-banner">
+        <div class="setup-copy">
+          <div class="setup-icon">✦</div>
+          <div><p class="eyebrow">Start here</p><h2>Turn three exports into a ready event kit.</h2><p>Nothing leaves this browser. Load your files, review every decision, then export what your team needs.</p></div>
+        </div>
+        <button class="button button-gold" data-action="focus-import">Set up workspace <span>→</span></button>
+      </section>
+
+      <section class="import-panel" id="import-panel">
+        <div class="section-title-row">
+          <div><p class="eyebrow">01 / Input</p><h2>Bring your event data</h2><p class="muted">CSV files are parsed locally. Add what you have — the core workspace works with registrations alone.</p></div>
+          <div class="privacy-note"><span class="lock-symbol">▣</span><span>Local only<br><small>No upload or account</small></span></div>
+        </div>
+        <div class="event-details">
+          <label class="field"><span>Event name</span><input id="event-name-input" type="text" value="Untitled event" placeholder="e.g. Spring Summit 2026"></label>
+          <label class="field"><span>Organizer</span><input id="organizer-input" type="text" value="Your organization" placeholder="e.g. Campus Tech Club"></label>
+          <label class="field"><span>Event ID</span><input id="event-id-input" type="text" value="my-event-2026" placeholder="stable-event-id"></label>
+          <label class="field"><span>Timezone</span><select id="timezone-input"><option value="local">Browser local time</option><option value="UTC">UTC</option><option value="Asia/Kolkata">Asia/Kolkata</option><option value="America/New_York">America/New_York</option><option value="Europe/London">Europe/London</option></select></label>
+        </div>
+        <div class="upload-grid">
+          <label class="upload-card upload-primary" for="registrations-file">
+            <input id="registrations-file" type="file" accept=".csv,text/csv">
+            <span class="upload-badge required">Required</span><span class="upload-symbol">♧</span><strong>Registrations</strong><small>Name, email and optional details</small><span class="upload-action">Choose CSV <b>↗</b></span><span class="file-name" id="registrations-file-name">No file selected</span>
+          </label>
+          <label class="upload-card" for="attendance-file">
+            <input id="attendance-file" type="file" accept=".csv,text/csv">
+            <span class="upload-badge">Optional</span><span class="upload-symbol">✓</span><strong>Attendance</strong><small>Use it to issue certificates</small><span class="upload-action">Choose CSV <b>↗</b></span><span class="file-name" id="attendance-file-name">No file selected</span>
+          </label>
+          <label class="upload-card" for="schedule-file">
+            <input id="schedule-file" type="file" accept=".csv,text/csv">
+            <span class="upload-badge">Optional</span><span class="upload-symbol">◷</span><strong>Schedule</strong><small>Find room and speaker clashes</small><span class="upload-action">Choose CSV <b>↗</b></span><span class="file-name" id="schedule-file-name">No file selected</span>
+          </label>
+        </div>
+        <div class="setup-footer"><span id="import-status" class="muted">Waiting for your registrations CSV.</span><button class="button button-gold" data-action="run-analysis" id="run-analysis">Analyze event <span>→</span></button></div>
+      </section>
+
+      <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
+      <section class="view" id="view-overview" data-view-panel="overview"></section>
+      <section class="view is-hidden" id="view-roster" data-view-panel="roster"></section>
+      <section class="view is-hidden" id="view-schedule" data-view-panel="schedule"></section>
+      <section class="view is-hidden" id="view-checkin" data-view-panel="checkin"></section>
+      <section class="view is-hidden" id="view-certificates" data-view-panel="certificates"></section>
+      <section class="view is-hidden" id="view-exports" data-view-panel="exports"></section>
+
+      <footer class="workspace-footer"><span>eventkit runs entirely in your browser.</span><span><button class="text-button" data-action="show-about">Privacy model</button><i>·</i><a href="https://github.com/" target="_blank" rel="noreferrer">Open source foundation ↗</a></span></footer>
+    </main>
+  </div>
+
+  <dialog class="modal" id="about-modal">
+    <button class="modal-close" data-action="close-about" aria-label="Close">×</button>
+    <p class="eyebrow">The eventkit promise</p><h2>Your data stays yours.</h2>
+    <p>EventKit is designed for organizers who need useful event operations without uploading attendee data to a platform. This website parses CSV files locally in your browser. It does not need an account, API key, database or server-side upload.</p>
+    <div class="modal-list"><div><b>Local processing</b><span>Registration, attendance and schedule data stays in this tab.</span></div><div><b>Explainable</b><span>Every flagged row includes a reason and a next action.</span></div><div><b>Portable</b><span>Export CSV, JSON, ICS, SVG and a self-contained event pack.</span></div></div>
+    <button class="button button-dark" data-action="close-about">Got it</button>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>

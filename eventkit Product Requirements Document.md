@@ -216,6 +216,20 @@ If a post-check fails, its claim moves from Verified to Unresolved. The report n
   email drafts, and scans generated text before writing. Public output fails
   closed if privacy checking finds an email-shaped value.
 
+### 6.10 Browser workspace deployment
+
+- The repository root includes a dependency-free static web workspace in
+  `index.html`, `styles.css`, and `app.js`.
+- The browser workspace imports registration, attendance and schedule CSVs
+  locally, mirrors the core validation and clash checks, offers event-day
+  search/check-in, previews credential generation, and exports roster,
+  review, calendar, event-log and manifest files.
+- The browser workspace never uploads attendee data and does not require a
+  database, account, server function or environment variable.
+- `vercel.json` configures the static project for Vercel. The website is a
+  single-organizer browser workspace; the Python CLI remains the authoritative
+  implementation for full Ed25519 issuer-key custody and signed revocations.
+
 ## 7. Non-functional requirements
 
 - **Determinism:** no clock, randomness or directory-order dependence anywhere in the output.

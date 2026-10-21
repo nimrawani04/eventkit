@@ -12,6 +12,11 @@ It is deliberately **offline-first**: runtime code uses the Python standard
 library, makes no network or AI calls, sends no email, and produces byte-stable
 artifacts for the same inputs.
 
+It also includes a deployable browser workspace in `index.html`. The web app is
+a static Vercel site: CSV files are parsed in the browser, no attendee data is
+uploaded, and organizers can review the roster, schedule, check-in state,
+credentials and exports from one interface.
+
 > Product requirements: [`eventkit Product Requirements Document.md`](eventkit%20Product%20Requirements%20Document.md)
 
 ## What you get
@@ -476,6 +481,52 @@ docker run --rm --network none \
 ```
 
 The image has no entrypoint; commands remain explicit and reproducible.
+
+## Deploy the browser workspace to Vercel
+
+The website is intentionally dependency-free. Deploy the repository root as a
+static Vercel project.
+
+### Vercel dashboard
+
+1. Import this repository in Vercel.
+2. Leave **Framework Preset** as `Other`.
+3. Leave **Build Command** empty.
+4. Set **Output Directory** to `.`.
+5. Deploy.
+
+`vercel.json` adds clean URLs and basic browser security headers. No environment
+variables or database are required.
+
+### Vercel CLI
+
+```sh
+npx vercel
+npx vercel --prod
+```
+
+The user-facing workspace is [`index.html`](index.html), with its styles in
+[`styles.css`](styles.css) and browser logic in [`app.js`](app.js). It supports:
+
+- Local CSV import for registrations, attendance and schedules
+- Explainable roster validation and duplicate/typo warnings
+- Schedule room and speaker clash detection
+- Searchable event-day check-in with local browser state
+- Deterministic calendar, roster, review and JSONL exports
+- Browser credential generation and public manifest verification
+- A demo dataset for trying the full workflow without real attendee data
+
+Run the static website checks before deploying:
+
+```sh
+node --check app.js
+node web-tests.mjs
+```
+
+The website is a browser workspace, not a hosted multi-user database. Each
+organizer's working data stays in their tab until they explicitly download an
+export. Use the Python CLI for the stronger Ed25519 signed-package and
+revocation workflow when issuer-key custody is required.
 
 ## Development
 
