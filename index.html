@@ -2,95 +2,1718 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1220">
-  <meta name="description" content="EventKit — private, explainable event operations in your browser.">
-  <title>EventKit — private event operations</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>EventKit — Private Event Operations Infrastructure</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cg transform='rotate(-30 12 12)'%3E%3Ccircle cx='7.3' cy='3.2' r='1.45'/%3E%3Crect x='5.5' y='4.7' width='3.6' height='14.6' rx='1.8'/%3E%3Crect x='14.9' y='4.7' width='3.6' height='14.6' rx='1.8'/%3E%3Ccircle cx='16.7' cy='20.8' r='1.45'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Inter:ital,opsz,wght@0,14..32,100..900&family=Instrument+Serif:ital@1&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    /* 1. Force black immediately so page never flashes white */
+    html, body { background: #000000 !important; color: #ffffff; }
+    body.workspace-active,
+    .workspace-section {
+      background: var(--canvas, #f7f5ee) !important;
+      color: var(--ink-primary, #12201a) !important;
+    }
+
+    @font-face {
+      font-family: "Inter";
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+      src: url("inter.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Instrument Serif";
+      font-style: italic;
+      font-weight: 400;
+      font-display: swap;
+      src: url("instrument-serif-italic.woff2") format("woff2");
+    }
+
+    :root {
+      --bg: #000000;
+      --text: #ffffff;
+      --muted: #9a9a9a;
+      --stat: #d8d8d8;
+      --border: rgba(255, 255, 255, 0.16);
+      --border-soft: rgba(255, 255, 255, 0.12);
+
+      --logo: 15.5px;
+      --logo-mark: 22px;
+      --nav: 14px;
+      --nav-h: 40px;
+      --btn: 13.5px;
+      --btn-h: 40px;
+      --hero-btn-h: 42px;
+      --h1: 48px;
+      --lede: 15.5px;
+      --badge: 12.5px;
+      --stat-size: 13.5px;
+      --header-y: 22px;
+      --header-x: 40px;
+      --stats-x: 72px;
+      --stats-y: 36px;
+      --hero-gap: 85px;
+      --copy-max: 860px;
+      --lede-max: 470px;
+    }
+
+    /* Universal reset */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    html, body {
+      background: #000000;
+      background: var(--bg, #000000);
+      color: #ffffff;
+      color: var(--text, #ffffff);
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font-family: inherit;
+      background: none;
+      border: none;
+      cursor: pointer;
+    }
+
+    /* Layer Stack */
+    .grain {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      pointer-events: none;
+      opacity: 0.035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    }
+
+    .hero-photo {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+      opacity: 1;
+    }
+
+    .hero-photo::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0.65) 100%),
+                  linear-gradient(180deg, rgba(0,0,0,0.35) 0%, transparent 40%, rgba(0,0,0,0.85) 100%);
+      pointer-events: none;
+    }
+
+    .hero-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      opacity: 1;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    /* Desktop Viewport (≥901px) */
+    @media (min-width: 901px) {
+      html, body {
+        height: auto;
+        overflow-x: hidden;
+      }
+      .page {
+        height: 100vh;
+        height: 100dvh;
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow: hidden;
+      }
+    }
+
+    /* Header — 3-Column Grid */
+    .header {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: var(--header-y) var(--header-x) 10px;
+      z-index: 50;
+      position: relative;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      justify-self: start;
+      font-size: var(--logo);
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      color: #fff;
+    }
+
+    .logo-mark {
+      width: var(--logo-mark);
+      height: var(--logo-mark);
+      flex-shrink: 0;
+      display: block;
+    }
+
+    .logo-suffix {
+      font-weight: 400;
+      opacity: 0.85;
+    }
+
+    /* Nav: Liquid-Metal Pills */
+    #site-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-self: center;
+    }
+
+    .nav-pill {
+      height: var(--nav-h);
+      padding: 0 18px;
+      border-radius: 7px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(198, 198, 198, 0.55);
+      background: linear-gradient(105deg, #050505 0%, #2a2a2a 48%, #4a4a4a 100%);
+      color: #f3f3f3;
+      font-size: var(--nav);
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+    }
+
+    .nav-pill::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.16) 50%, transparent 70%);
+      transform: translateX(-120%);
+      transition: transform 0.6s ease;
+      pointer-events: none;
+    }
+
+    .nav-pill:hover::before {
+      transform: translateX(120%);
+    }
+
+    .nav-pill:hover {
+      border-color: rgba(235, 235, 235, 0.9);
+      background: linear-gradient(105deg, #111111 0%, #3a3a3a 45%, #6a6a6a 100%);
+      box-shadow: 0 0 18px rgba(200, 210, 230, 0.18);
+    }
+
+    /* Header Right CTA */
+    .header-cta {
+      justify-self: end;
+    }
+
+    /* Buttons (Liquid-Glass Language) */
+    .btn {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: var(--btn-h);
+      padding: 0 16px;
+      border-radius: 6px;
+      font-size: var(--btn);
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease, color 0.35s ease, filter 0.35s ease;
+    }
+
+    .btn::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(115deg, transparent 20%, rgba(255, 255, 255, 0.45) 48%, transparent 76%);
+      transform: translateX(-130%);
+      transition: transform 0.65s ease;
+      pointer-events: none;
+    }
+
+    .btn:hover::after {
+      transform: translateX(130%);
+    }
+
+    .btn-solid {
+      background: linear-gradient(180deg, #ffffff 0%, #e7e7e7 48%, #cfcfcf 100%);
+      color: #111111;
+      border: 1px solid #ffffff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    }
+
+    .btn-solid:hover {
+      background: linear-gradient(180deg, #ffffff 0%, #f3f6ff 42%, #d5def2 100%);
+      border-color: #f2f6ff;
+      box-shadow: inset 0 1px 0 #ffffff, 0 0 22px rgba(186, 208, 255, 0.35), 0 8px 18px rgba(255, 255, 255, 0.12);
+    }
+
+    .hero-btn.btn-solid:hover {
+      box-shadow: inset 0 1px 0 #ffffff, 0 0 26px rgba(186, 208, 255, 0.4), 0 8px 18px rgba(255, 255, 255, 0.14);
+    }
+
+    .btn-ghost {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.5) 46%, rgba(150, 170, 200, 0.1));
+      color: #ffffff;
+      border: 1px solid rgba(198, 198, 198, 0.55);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-ghost:hover {
+      border-color: rgba(220, 230, 255, 0.8);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 24px rgba(170, 200, 255, 0.28);
+    }
+
+    .hero-btn {
+      height: var(--hero-btn-h);
+      padding: 0 18px;
+    }
+
+    /* Burger Menu Button */
+    .burger {
+      display: none;
+      width: 42px;
+      height: 42px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: rgba(8, 8, 8, 0.55);
+      z-index: 60;
+      place-content: center;
+      gap: 5px;
+      padding: 0;
+      justify-self: end;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .burger span {
+      display: block;
+      width: 16px;
+      height: 1.5px;
+      background: #ffffff;
+      border-radius: 1px;
+      transition: transform 0.25s ease, opacity 0.2s ease;
+    }
+
+    .burger:hover {
+      border-color: rgba(255, 255, 255, 0.32);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    body.menu-open .burger span:nth-child(1) {
+      transform: translateY(6.5px) rotate(45deg);
+    }
+    body.menu-open .burger span:nth-child(2) {
+      opacity: 0;
+    }
+    body.menu-open .burger span:nth-child(3) {
+      transform: translateY(-6.5px) rotate(-45deg);
+    }
+
+    .menu-backdrop {
+      display: none;
+    }
+
+    /* Hero — Bottom-Centered */
+    .hero {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 8px 24px var(--hero-gap);
+      min-height: 0;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      max-width: var(--copy-max);
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 22px;
+      padding: 9px 15px;
+      border: 0;
+      border-radius: 5px;
+      background: linear-gradient(90deg, #7d7d7d 0%, #2a2a2a 52%, #0a0a0a 100%);
+      color: #f2f2f2;
+      font-size: var(--badge);
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      max-width: 100%;
+    }
+
+    .badge-star {
+      width: 18px;
+      height: 20px;
+      flex-shrink: 0;
+      filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.45));
+      animation: in-star 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+      animation-delay: 0.28s;
+      transform-origin: center;
+    }
+
+    /* Headline */
+    .headline {
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      font-weight: 500;
+      font-size: var(--h1);
+      letter-spacing: -0.045em;
+      line-height: 1.12;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      width: 100%;
+      max-width: 100%;
+      text-align: center;
+    }
+
+    .headline-line {
+      display: block;
+      overflow: hidden;
+      padding: 0.06em 0.15em 0.14em;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .headline-inner {
+      display: block;
+      max-width: 100%;
+    }
+
+    .headline em {
+      font-family: "Instrument Serif", "Times New Roman", Times, serif;
+      font-style: italic;
+      font-weight: 400;
+      font-size: 1.08em;
+      letter-spacing: -0.03em;
+      color: #9a9a9a;
+      animation: in-em 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+      animation-delay: 0.72s;
+    }
+
+    /* Lede */
+    .lede {
+      max-width: var(--lede-max);
+      width: 100%;
+      margin-top: 18px;
+      color: #9a9a9a;
+      font-size: var(--lede);
+      font-weight: 400;
+      line-height: 1.55;
+      letter-spacing: -0.015em;
+      box-sizing: border-box;
+    }
+
+    /* Hero Actions */
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-top: 26px;
+      max-width: 100%;
+    }
+
+    /* Stats Footer */
+    .stats {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 var(--stats-x) var(--stats-y);
+      padding-bottom: max(var(--stats-y), env(safe-area-inset-bottom));
+      color: var(--stat);
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      font-size: var(--stat-size);
+      letter-spacing: -0.015em;
+      white-space: nowrap;
+      color: #d8d8d8;
+    }
+
+    .stat-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      display: block;
+    }
+
+    .stat-icon-wide {
+      width: 38px;
+      height: 21px;
+      flex-shrink: 0;
+      display: block;
+    }
+
+    /* Entrance Motion Keyframes */
+    .appear {
+      opacity: 1;
+      animation-duration: 1.05s;
+      animation-fill-mode: both;
+      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+      animation-delay: var(--d, 0.08s);
+    }
+
+    .appear.lede {
+      animation-duration: 1.25s;
+    }
+
+    @keyframes in-scale {
+      from { opacity: 0; transform: scale(0.84); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes in-soft {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes in-mask {
+      from { opacity: 0; transform: translateY(40%); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes in-pop {
+      0% { opacity: 0; transform: scale(0.9); }
+      70% { opacity: 1; transform: scale(1.03); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    @keyframes in-btn {
+      from { opacity: 0; transform: translateY(18px) scale(0.94); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes in-side {
+      from { opacity: 0; transform: translateX(22px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes in-stat {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes in-star {
+      0% { transform: scale(0.2) rotate(-50deg); }
+      65% { transform: scale(1.2) rotate(8deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    @keyframes in-em {
+      from { opacity: 0.35; filter: blur(4px); }
+      to { opacity: 1; filter: blur(0); }
+    }
+
+    .appear--scale { animation-name: in-scale; }
+    .appear--soft  { animation-name: in-soft; }
+    .appear--mask  { animation-name: in-mask; }
+    .appear--pop   { animation-name: in-pop; }
+    .appear--btn   { animation-name: in-btn; }
+    .appear--side  { animation-name: in-side; }
+    .appear--stat  { animation-name: in-stat; }
+
+    .is-in, .hero-photo.is-in {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+      clip-path: none !important;
+      filter: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition: none !important;
+        animation: none !important;
+      }
+      .appear, .hero-photo, .headline em, .badge-star {
+        opacity: 1 !important;
+        transform: none !important;
+        clip-path: none !important;
+        filter: none !important;
+      }
+    }
+
+    /* RESPONSIVE BREAKPOINTS */
+
+    /* ≥1600 */
+    @media (min-width: 1600px) {
+      :root {
+        --logo: 17px;
+        --logo-mark: 24px;
+        --nav: 15px;
+        --nav-h: 44px;
+        --btn: 15px;
+        --btn-h: 44px;
+        --hero-btn-h: 48px;
+        --h1: 64px;
+        --lede: 18px;
+        --badge: 13.5px;
+        --stat-size: 15px;
+        --header-y: 28px;
+        --header-x: 64px;
+        --stats-x: 96px;
+        --stats-y: 44px;
+        --copy-max: 980px;
+        --lede-max: 540px;
+      }
+      .nav-pill { padding: 0 20px; }
+      .badge { margin-bottom: 26px; }
+      .lede { margin-top: 22px; }
+      .hero-actions { margin-top: 30px; gap: 12px; }
+      .stat-icon { width: 22px; height: 22px; }
+      .stat-icon-wide { width: 45px; height: 24px; }
+    }
+
+    /* ≥1920 */
+    @media (min-width: 1920px) {
+      :root {
+        --logo: 18px;
+        --logo-mark: 26px;
+        --nav: 16px;
+        --nav-h: 48px;
+        --btn: 16px;
+        --btn-h: 48px;
+        --hero-btn-h: 52px;
+        --h1: 76px;
+        --lede: 20px;
+        --badge: 14.5px;
+        --stat-size: 16px;
+        --header-y: 32px;
+        --header-x: 80px;
+        --stats-x: 120px;
+        --stats-y: 52px;
+        --copy-max: 1120px;
+        --lede-max: 620px;
+      }
+      #site-nav { gap: 10px; }
+      .nav-pill { padding: 0 22px; }
+      .btn { padding: 0 22px; }
+      .badge { padding: 10px 15px; }
+      .stat-icon-wide { width: 48px; height: 26px; }
+    }
+
+    /* ≥2560 */
+    @media (min-width: 2560px) {
+      :root {
+        --h1: 88px;
+        --lede: 22px;
+        --header-x: 120px;
+        --stats-x: 160px;
+        --copy-max: 1280px;
+        --lede-max: 680px;
+      }
+    }
+
+    /* 1280–1599 */
+    @media (min-width: 1280px) and (max-width: 1599px) {
+      :root {
+        --h1: 54px;
+        --lede: 16px;
+        --header-x: 48px;
+        --stats-x: 80px;
+        --copy-max: 900px;
+      }
+    }
+
+    /* 901–1279 */
+    @media (min-width: 901px) and (max-width: 1279px) {
+      :root {
+        --logo: 15px;
+        --nav: 13px;
+        --nav-h: 36px;
+        --btn: 13px;
+        --btn-h: 38px;
+        --hero-btn-h: 40px;
+        --h1: 42px;
+        --lede: 15px;
+        --badge: 12px;
+        --stat-size: 12.5px;
+        --header-y: 16px;
+        --header-x: 28px;
+        --stats-x: 36px;
+        --stats-y: 28px;
+        --hero-gap: 64px;
+        --copy-max: 760px;
+        --lede-max: 440px;
+      }
+      .nav-pill { padding: 0 14px; }
+      .badge { margin-bottom: 16px; }
+      .lede { margin-top: 14px; }
+      .hero-actions { margin-top: 20px; }
+    }
+
+    /* ≥901 and max-height 850 */
+    @media (min-width: 901px) and (max-height: 850px) {
+      :root {
+        --header-y: 14px;
+        --stats-y: 24px;
+        --hero-gap: 48px;
+        --h1: 40px;
+      }
+      .badge { margin-bottom: 12px; }
+      .lede { margin-top: 12px; }
+      .hero-actions { margin-top: 16px; }
+    }
+
+    /* ≥901 and max-height 720 */
+    @media (min-width: 901px) and (max-height: 720px) {
+      :root {
+        --h1: 34px;
+        --lede: 14px;
+        --hero-gap: 32px;
+        --stats-y: 18px;
+        --nav-h: 30px;
+        --btn-h: 34px;
+        --hero-btn-h: 36px;
+      }
+      .badge { margin-bottom: 8px; }
+    }
+
+    /* ≤900 Phone & Small Screens */
+    @media (max-width: 900px) {
+      html, body {
+        height: auto;
+        overflow-y: auto;
+      }
+      .page {
+        min-height: 100vh;
+        min-height: 100dvh;
+      }
+      :root {
+        --logo: 16px;
+        --btn: 14px;
+        --btn-h: 42px;
+        --hero-btn-h: 46px;
+        --h1: clamp(26px, 6vw, 36px);
+        --lede: 16px;
+        --badge: 13px;
+        --stat-size: 14px;
+        --header-y: 16px;
+        --header-x: 18px;
+        --stats-x: 20px;
+        --stats-y: 28px;
+        --hero-gap: 36px;
+      }
+      .header {
+        grid-template-columns: 1fr auto auto;
+        gap: 8px;
+        padding-left: max(var(--header-x), env(safe-area-inset-left));
+        padding-right: max(var(--header-x), env(safe-area-inset-right));
+        padding-top: max(var(--header-y), env(safe-area-inset-top));
+      }
+      .logo { z-index: 80; }
+      .header-cta { z-index: 80; }
+      .burger { display: grid; z-index: 80; }
+
+      .menu-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(8, 8, 8, 0.42);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.28s ease, visibility 0.28s ease;
+      }
+
+      body.menu-open .menu-backdrop {
+        opacity: 1;
+        visibility: visible;
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+      }
+
+      #site-nav {
+        position: fixed;
+        inset: 0;
+        z-index: 45;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 12px;
+        padding: 96px 22px 32px;
+        padding-top: max(96px, calc(env(safe-area-inset-top) + 88px));
+        background: transparent;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 0.28s ease, visibility 0.28s ease;
+      }
+
+      body.menu-open #site-nav {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+      }
+
+      body.menu-open {
+        overflow: hidden;
+      }
+
+      #site-nav .nav-pill {
+        width: 100%;
+        max-width: 380px;
+        height: 56px;
+        font-size: 19px;
+        border-radius: 10px;
+      }
+
+      .hero {
+        padding: 20px 20px 64px;
+        align-items: flex-end;
+      }
+      .hero-copy {
+        max-width: 100%;
+      }
+      .lede {
+        max-width: 100%;
+      }
+
+      .stats {
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        white-space: normal;
+        text-align: center;
+        padding-left: max(var(--stats-x), env(safe-area-inset-left));
+        padding-right: max(var(--stats-x), env(safe-area-inset-right));
+      }
+
+      .stat {
+        white-space: normal;
+        text-align: center;
+        max-width: 100%;
+        justify-content: center;
+      }
+    }
+
+    /* ≤560 Screen Boundary */
+    @media (max-width: 560px) {
+      :root {
+        --h1: clamp(23px, 6.8vw, 34px);
+        --lede: 15.5px;
+        --header-x: 16px;
+      }
+      .hero-actions {
+        flex-direction: column;
+        width: 100%;
+        align-items: center;
+      }
+      .hero-btn {
+        width: 100%;
+        max-width: 320px;
+      }
+    }
+
+    /* ≤440 Edge Protection */
+    @media (max-width: 440px) {
+      :root {
+        --header-x: 12px;
+        --stats-x: 16px;
+      }
+      .header-cta {
+        padding: 0 12px;
+        font-size: 12.5px;
+        height: 38px;
+      }
+      .burger {
+        width: 38px;
+        height: 38px;
+      }
+    }
+
+    @media print {
+      body { background: #ffffff !important; color: #000000 !important; }
+      .grain, .hero-photo, .burger { display: none !important; }
+    }
+
+
+    /* ==========================================================================
+       PAGE 1 vs PAGE 2 SWITCHING (Opens cleanly, NOT by scrolling)
+       ========================================================================== */
+    #home-page {
+      display: grid;
+    }
+    #workspace-page {
+      display: none;
+    }
+
+    body.workspace-open #home-page {
+      display: none !important;
+    }
+    body.workspace-open #workspace-page {
+      display: block !important;
+      position: relative;
+      z-index: 10;
+      min-height: 100vh;
+      min-height: 100dvh;
+      color: #ffffff;
+      background: transparent !important;
+    }
+
+    body.workspace-open {
+      overflow-y: auto !important;
+      height: auto !important;
+      background: #000000 !important;
+    }
+
+    /* Page 2 Top Navigation Bar (NO SIDEBAR - ON TOP) */
+    .sidebar,
+    .mobile-topbar,
+    .workspace-return-banner {
+      display: none !important;
+    }
+
+    .workspace-topbar {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 16px !important;
+      padding: 12px var(--header-x) !important;
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 90 !important;
+      background: rgba(0, 0, 0, 0.85) !important;
+      backdrop-filter: blur(24px) !important;
+      -webkit-backdrop-filter: blur(24px) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .workspace-nav-pills {
+      display: flex !important;
+      flex-direction: row !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 8px !important;
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      scrollbar-width: none !important;
+    }
+    .workspace-nav-pills::-webkit-scrollbar {
+      display: none;
+    }
+
+    #workspace-nav .nav-pill {
+      width: auto !important;
+      min-width: 0 !important;
+      flex: 0 0 auto !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      height: var(--nav-h, 40px) !important;
+      padding: 0 16px !important;
+      white-space: nowrap !important;
+      font-size: var(--nav, 14px) !important;
+      transform: none !important;
+      border-radius: 7px !important;
+      background: linear-gradient(105deg, #050505 0%, #2a2a2a 48%, #4a4a4a 100%) !important;
+      border: 1px solid rgba(198, 198, 198, 0.55) !important;
+      color: #f3f3f3 !important;
+      box-shadow: none !important;
+    }
+
+    #workspace-nav .nav-pill:hover {
+      border-color: rgba(235, 235, 235, 0.9) !important;
+      background: linear-gradient(105deg, #111111 0%, #3a3a3a 45%, #6a6a6a 100%) !important;
+      box-shadow: 0 0 18px rgba(200, 210, 230, 0.18) !important;
+      transform: none !important;
+    }
+
+    #workspace-nav .nav-pill.is-active {
+      background: linear-gradient(105deg, #182e25 0%, #204d3c 48%, #2d6b54 100%) !important;
+      border-color: rgba(52, 211, 153, 0.8) !important;
+      color: #ffffff !important;
+      box-shadow: 0 0 16px rgba(52, 211, 153, 0.35) !important;
+      transform: none !important;
+    }
+
+    .workspace-top-actions {
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      flex-shrink: 0 !important;
+    }
+
+    .workspace-main-wrapper {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 28px 64px;
+    }
+
+    .workspace-main-wrapper .workspace {
+      padding: 0;
+      max-width: 100%;
+    }
+
+    /* Dark liquid glass styling for Page 2 components */
+    .workspace-header {
+      background: transparent !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+      padding-bottom: 18px !important;
+      margin-bottom: 24px !important;
+    }
+
+    .workspace-title-group h1 {
+      font-family: "Cormorant Garamond", Georgia, serif !important;
+      font-size: clamp(28px, 4.5vw, 40px) !important;
+      color: #ffffff !important;
+      margin: 4px 0 0 !important;
+    }
+
+    /* Clean View Visibility Logic:
+       When active view is NOT overview, hide #setup-banner and #import-panel immediately! */
+    body[data-active-view]:not([data-active-view="overview"]) #setup-banner,
+    body[data-active-view]:not([data-active-view="overview"]) #import-panel {
+      display: none !important;
+    }
+
+    .breadcrumb-root, .breadcrumb-sep {
+      color: #9a9a9a !important;
+    }
+    .breadcrumb-tag {
+      background: rgba(255, 255, 255, 0.1) !important;
+      color: #ffffff !important;
+      border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    }
+
+    .setup-banner {
+      background: linear-gradient(135deg, rgba(24, 24, 24, 0.9) 0%, rgba(10, 10, 10, 0.98) 100%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.18) !important;
+      border-radius: 16px !important;
+      color: #ffffff !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6) !important;
+    }
+    .setup-text h2 { color: #ffffff !important; }
+    .setup-text p { color: #d4d4d4 !important; }
+    .setup-icon-box {
+      background: rgba(255, 255, 255, 0.08) !important;
+      border: 1px solid rgba(255, 255, 255, 0.2) !important;
+      color: #ffffff !important;
+    }
+
+    .import-panel {
+      background: rgba(14, 14, 14, 0.82) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      border-radius: 16px !important;
+      color: #ffffff !important;
+      backdrop-filter: blur(16px);
+    }
+    .import-panel h2 { color: #ffffff !important; }
+
+    .card {
+      background: rgba(14, 14, 14, 0.82) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      border-radius: 14px !important;
+      color: #ffffff !important;
+      backdrop-filter: blur(16px);
+    }
+    .card h3 { color: #ffffff !important; }
+
+    .metric-card {
+      background: rgba(18, 18, 18, 0.85) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      border-radius: 14px !important;
+    }
+    .metric-value { color: #ffffff !important; }
+    .metric-label { color: #a3a3a3 !important; }
+    .metric-detail { color: #d4d4d4 !important; }
+
+    .upload-card {
+      background: rgba(255, 255, 255, 0.04) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      border-radius: 12px !important;
+      color: #ffffff !important;
+    }
+    .upload-card strong { color: #ffffff !important; }
+    .upload-card small { color: #9a9a9a !important; }
+    .upload-card-bottom { color: #d4d4d4 !important; }
+    .upload-card:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-color: rgba(255, 255, 255, 0.4) !important;
+    }
+
+    .field input, .field select {
+      background: rgba(255, 255, 255, 0.07) !important;
+      border: 1px solid rgba(255, 255, 255, 0.18) !important;
+      color: #ffffff !important;
+      border-radius: 8px !important;
+    }
+    .field input:focus, .field select:focus {
+      border-color: #ffffff !important;
+      background: rgba(255, 255, 255, 0.12) !important;
+    }
+
+    /* Table, Cards & Toolbars — Deep Dark Glass (NEVER solid white background hiding text!) */
+    .table-card {
+      background: rgba(14, 14, 14, 0.88) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      backdrop-filter: blur(20px) !important;
+      border-radius: 14px !important;
+      overflow: hidden !important;
+    }
+
+    .table-toolbar {
+      background: rgba(18, 18, 18, 0.95) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+    }
+
+    .filter-group {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border: 1px solid rgba(255, 255, 255, 0.16) !important;
+      border-radius: 6px !important;
+    }
+
+    .filter-button {
+      background: transparent !important;
+      border: 0 !important;
+      color: #a3a3a3 !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      padding: 6px 12px !important;
+      border-radius: 5px !important;
+      transition: all 0.15s ease !important;
+    }
+    .filter-button:hover {
+      color: #ffffff !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+    .filter-button.is-active {
+      background: #ffffff !important;
+      color: #000000 !important;
+      border-color: #ffffff !important;
+      font-weight: 700 !important;
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.3) !important;
+    }
+
+    .data-table {
+      background: transparent !important;
+      width: 100% !important;
+      border-collapse: collapse !important;
+    }
+
+    .data-table th {
+      background: rgba(18, 18, 18, 0.95) !important;
+      color: #a3a3a3 !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+      font-size: 10px !important;
+      letter-spacing: 0.12em !important;
+      text-transform: uppercase !important;
+      padding: 13px 22px !important;
+    }
+
+    .data-table tbody tr {
+      background: transparent !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+      transition: background 0.15s ease !important;
+    }
+
+    /* CRITICAL FIX: Row hover MUST be dark translucent glass, NEVER white! */
+    .data-table tbody tr:hover,
+    .data-table tbody tr:focus-within,
+    .data-table tbody tr.is-selected {
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    .data-table td {
+      border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+      color: #e5e5e5 !important;
+      background: transparent !important;
+      padding: 14px 22px !important;
+      vertical-align: middle !important;
+    }
+
+    .data-table td strong {
+      color: #ffffff !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+    }
+
+    .data-table td small {
+      color: #a3a3a3 !important;
+    }
+
+    .data-table td code {
+      background: rgba(255, 255, 255, 0.08) !important;
+      border: 1px solid rgba(255, 255, 255, 0.16) !important;
+      color: #ffffff !important;
+      padding: 3px 7px !important;
+      border-radius: 4px !important;
+      font-family: var(--font-mono, monospace) !important;
+      font-size: 11px !important;
+    }
+
+    .attendee-avatar {
+      background: rgba(255, 255, 255, 0.1) !important;
+      color: #ffffff !important;
+      border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    }
+
+    .toolbar-input, .checkin-search {
+      background: rgba(255, 255, 255, 0.07) !important;
+      border: 1px solid rgba(255, 255, 255, 0.18) !important;
+      color: #ffffff !important;
+      border-radius: 6px !important;
+      padding: 8px 14px !important;
+    }
+    .toolbar-input::placeholder, .checkin-search::placeholder {
+      color: #888888 !important;
+    }
+
+    /* Schedule session rows: Dark translucent hover, NEVER white! */
+    .session-row {
+      background: rgba(18, 18, 18, 0.85) !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+      border-radius: 10px !important;
+    }
+    .session-row:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-color: rgba(255, 255, 255, 0.3) !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    }
+    .session-time {
+      color: #ffffff !important;
+    }
+    .session-title strong {
+      color: #ffffff !important;
+    }
+    .session-title span {
+      color: #a3a3a3 !important;
+    }
+
+    /* Checkin hero banner — sleek dark theme */
+    .checkin-hero {
+      background: linear-gradient(135deg, rgba(22, 22, 22, 0.92) 0%, rgba(10, 10, 10, 0.98) 100%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      color: #ffffff !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6) !important;
+      border-radius: 16px !important;
+    }
+    .checkin-hero h2 {
+      color: #ffffff !important;
+    }
+    .checkin-hero p {
+      color: #d4d4d4 !important;
+    }
+    .checkin-hero .eyebrow {
+      color: #ffffff !important;
+      opacity: 0.85 !important;
+    }
+    .checkin-toolbar {
+      background: transparent !important;
+      border: none !important;
+    }
+    .checkin-state {
+      color: #a3a3a3 !important;
+    }
+
+    /* Buttons — Crisp Black & White */
+    .button-gold, .button-dark, .btn-solid {
+      background: #ffffff !important;
+      color: #000000 !important;
+      font-weight: 600 !important;
+      border: 1px solid #ffffff !important;
+      box-shadow: 0 0 16px rgba(255, 255, 255, 0.2) !important;
+    }
+    .button-gold:hover, .button-dark:hover, .btn-solid:hover {
+      background: #e5e5e5 !important;
+      color: #000000 !important;
+      box-shadow: 0 0 24px rgba(255, 255, 255, 0.4) !important;
+    }
+    .button-ghost, .button-accent-outline, .btn-ghost {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border: 1px solid rgba(255, 255, 255, 0.22) !important;
+      color: #ffffff !important;
+    }
+    .button-ghost:hover, .button-accent-outline:hover, .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.15) !important;
+      border-color: #ffffff !important;
+    }
+
+    /* High Visibility Badges — Crisp on Pure Black, NO Dull Red */
+    .status-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      padding: 4px 10px !important;
+      border-radius: 6px !important;
+      font-size: 11.5px !important;
+      font-weight: 600 !important;
+      letter-spacing: 0.04em !important;
+      text-transform: uppercase !important;
+    }
+    .status-danger {
+      background: #ffffff !important;
+      color: #000000 !important;
+      border: 1px solid #ffffff !important;
+      font-weight: 700 !important;
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.35) !important;
+    }
+    .status-warning, .issue-badge {
+      background: rgba(251, 191, 36, 0.18) !important;
+      border: 1px solid #fbbf24 !important;
+      color: #fbbf24 !important;
+      font-weight: 600 !important;
+    }
+    .status-good {
+      background: rgba(255, 255, 255, 0.12) !important;
+      border: 1px solid rgba(255, 255, 255, 0.4) !important;
+      color: #ffffff !important;
+      font-weight: 600 !important;
+    }
+    .status-muted {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border: 1px solid rgba(255, 255, 255, 0.16) !important;
+      color: #a3a3a3 !important;
+    }
+    .role-badge {
+      background: rgba(255, 255, 255, 0.08) !important;
+      border: 1px solid rgba(255, 255, 255, 0.22) !important;
+      color: #ffffff !important;
+      padding: 4px 9px !important;
+      border-radius: 6px !important;
+      font-size: 11.5px !important;
+    }
+    .clash-box {
+      background: rgba(255, 255, 255, 0.05) !important;
+      border: 1px solid rgba(255, 255, 255, 0.18) !important;
+      border-left: 4px solid #ffffff !important;
+      color: #f3f3f3 !important;
+      border-radius: 8px !important;
+      padding: 14px 16px !important;
+      margin-bottom: 10px !important;
+    }
+    .clash-box strong { color: #ffffff !important; }
+    .clash-box span { color: #d4d4d4 !important; }
+
+    .check-button {
+      background: rgba(255, 255, 255, 0.08) !important;
+      border: 1px solid rgba(255, 255, 255, 0.25) !important;
+      color: #ffffff !important;
+      padding: 6px 14px !important;
+      border-radius: 6px !important;
+      cursor: pointer !important;
+      font-weight: 500 !important;
+    }
+    .check-button:hover {
+      background: rgba(255, 255, 255, 0.2) !important;
+      border-color: #ffffff !important;
+    }
+    .check-button.is-checked {
+      background: #ffffff !important;
+      color: #000000 !important;
+      border-color: #ffffff !important;
+      font-weight: 700 !important;
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.35) !important;
+    }
+
+    .progress-ring {
+      background: conic-gradient(#ffffff var(--progress, 0deg), rgba(255, 255, 255, 0.12) 0deg) !important;
+    }
+    .progress-ring span {
+      background: #000000 !important;
+      color: #ffffff !important;
+    }
+
+    .view-heading h2 {
+      font-family: "Cormorant Garamond", Georgia, serif !important;
+      font-size: clamp(28px, 4.5vw, 42px) !important;
+      color: #ffffff !important;
+      margin: 4px 0 8px !important;
+    }
+    .view-heading p {
+      color: #a3a3a3 !important;
+    }
+    .view-heading .eyebrow {
+      color: #ffffff !important;
+      opacity: 0.85;
+      font-size: 11px !important;
+      letter-spacing: 0.12em !important;
+    }
+
+    /* Workspace Section Transition */
+    .workspace-section {
+      position: relative;
+      z-index: 20;
+      background: var(--canvas, #f7f5ee);
+      color: var(--ink-primary, #12201a);
+      box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.45);
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .workspace-return-banner {
+      background: #0c231c;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(52, 211, 153, 0.2);
+    }
+    .return-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #6ee7b7;
+      font-size: 12.5px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      transition: color 0.2s ease;
+    }
+    .return-link:hover {
+      color: #ffffff;
+      text-decoration: underline;
+    }
+  </style>
 </head>
-<body>
-  <div class="app-frame">
-    <aside class="sidebar" id="sidebar">
-      <div class="brand-lockup">
-        <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" role="img"><path d="M16 2.75 28 7.8v8.03c0 6.2-4.46 11.1-12 13.42C8.46 26.93 4 22.03 4 15.83V7.8l12-5.05Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m10 16.1 3.45 3.45L22.55 10.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"/></svg>
-        </div>
-        <div>
-          <strong>eventkit</strong>
-          <span>local operations</span>
-        </div>
-      </div>
+<body style="background:#000;color:#fff">
+  <!-- Subtle tactile grain layer -->
+  <div class="grain" aria-hidden="true"></div>
 
-      <div class="privacy-pill"><span class="live-dot"></span><span>Runs in your browser</span></div>
+  <!-- Hero photo & video background with dark gradient scrim -->
+  <div class="hero-photo" aria-hidden="true">
+    <video autoplay loop muted playsinline class="hero-video" src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260818_072341_50851634-bbc3-4c33-9acc-7647d4db44aa.mp4"></video>
+  </div>
 
-      <nav class="side-nav" aria-label="Workspace sections">
-        <button class="nav-item is-active" data-view="overview"><span class="nav-icon">⌂</span><span>Overview</span><kbd>1</kbd></button>
-        <button class="nav-item" data-view="roster"><span class="nav-icon">♧</span><span>Roster</span><span class="nav-count" id="nav-roster-count">0</span></button>
-        <button class="nav-item" data-view="schedule"><span class="nav-icon">◷</span><span>Schedule</span><span class="nav-count" id="nav-schedule-count">0</span></button>
-        <button class="nav-item" data-view="checkin"><span class="nav-icon">✓</span><span>Check-in</span><span class="nav-count nav-count-good" id="nav-checkin-count">0</span></button>
-        <button class="nav-item" data-view="certificates"><span class="nav-icon">◇</span><span>Credentials</span><span class="nav-count" id="nav-certificate-count">0</span></button>
-        <button class="nav-item" data-view="exports"><span class="nav-icon">↗</span><span>Export kit</span></button>
+  <div class="page" id="home-page">
+    <!-- Mobile blur backdrop -->
+    <div class="menu-backdrop" aria-hidden="true"></div>
+
+    <!-- Header: Responsive Grid with Flexible Center Nav -->
+    <header class="header">
+      <!-- Left: Logo -->
+      <a href="#top" class="logo appear appear--scale" style="--d: 0.08s;" aria-label="EventKit">
+        <svg class="logo-mark" viewBox="0 0 24 24" fill="currentColor">
+          <g transform="rotate(-30 12 12)">
+            <circle cx="7.3" cy="3.2" r="1.45"/>
+            <rect x="5.5" y="4.7" width="3.6" height="14.6" rx="1.8"/>
+            <rect x="14.9" y="4.7" width="3.6" height="14.6" rx="1.8"/>
+            <circle cx="16.7" cy="20.8" r="1.45"/>
+          </g>
+        </svg>
+        <span>eventkit</span>
+      </a>
+
+      <!-- Center: 6 Liquid-Metal Nav Pills -->
+      <nav id="site-nav" aria-label="Primary">
+        <a href="#view-overview" class="nav-pill appear appear--scale" style="--d: 0.12s;" data-target-view="overview">Overview</a>
+        <a href="#view-roster" class="nav-pill appear appear--soft" style="--d: 0.20s;" data-target-view="roster">Attendance Roster</a>
+        <a href="#view-schedule" class="nav-pill appear appear--scale" style="--d: 0.28s;" data-target-view="schedule">Schedule & Clashes</a>
+        <a href="#view-checkin" class="nav-pill appear appear--soft" style="--d: 0.36s;" data-target-view="checkin">Arrival Desk</a>
+        <a href="#view-certificates" class="nav-pill appear appear--scale" style="--d: 0.44s;" data-target-view="certificates">Credentials</a>
+        <a href="#view-exports" class="nav-pill appear appear--soft" style="--d: 0.52s;" data-target-view="exports">Deliverables</a>
       </nav>
 
-      <div class="sidebar-bottom">
-        <button class="sidebar-help" data-action="show-about"><span>?</span><span>How it works</span></button>
-        <div class="version-note">EVENTKIT <span>0.2.0 WEB</span></div>
+      <!-- Right: Header CTA & Burger -->
+      <a href="#start" class="btn btn-solid header-cta appear appear--scale" style="--d: 0.34s;">Launch Workspace</a>
+      <button class="burger appear appear--scale" style="--d: 0.34s;" aria-controls="site-nav" aria-expanded="false" aria-label="Open menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </header>
+
+    <!-- Main Hero (Bottom-Centered) -->
+    <main class="hero" id="top">
+      <div class="hero-copy">
+        <!-- Badge -->
+        <div class="badge appear appear--pop" style="--d: 0.22s;">
+          <svg class="badge-star" viewBox="0 0 24 24" fill="#ffffff">
+            <path d="M12 2.6C12.55 2.6 12.88 3.15 13.08 4.7c.62 4.7 1.52 5.6 6.22 6.22 1.55.2 2.1.53 2.1 1.08s-.55.88-2.1 1.08c-4.7.62-5.6 1.52-6.22 6.22-.2 1.55-.53 2.1-1.08 2.1s-.88-.55-1.08-2.1c-.62-4.7-1.52-5.6-6.22-6.22C3.15 12.88 2.6 12.55 2.6 12s.55-.88 2.1-1.08c4.7-.62 5.6-1.52 6.22-6.22C11.12 3.15 11.45 2.6 12 2.6Z"/>
+          </svg>
+          <span>Private Event Operations Infrastructure</span>
+        </div>
+
+        <!-- Headline -->
+        <h1 class="headline">
+          <span class="headline-line"><span class="headline-inner appear appear--mask" style="--d: 0.42s;">Orchestrate <em>private events</em> with</span></span>
+          <span class="headline-line"><span class="headline-inner appear appear--mask" style="--d: 0.62s;">absolute precision in minutes.</span></span>
+        </h1>
+
+        <!-- Lede -->
+        <p class="lede appear appear--soft" style="--d: 0.82s;">Parse registrations locally, detect speaker clashes, operate live offline arrival check-in, and issue tamper-proof cryptographic credentials.</p>
+
+        <!-- Actions -->
+        <div class="hero-actions">
+          <a href="#start" class="btn btn-solid hero-btn appear appear--btn" style="--d: 0.96s;">Launch Workspace →</a>
+          <a href="#demo" class="btn btn-ghost hero-btn appear appear--side" style="--d: 1.10s;">Explore Demo Summit ✦</a>
+        </div>
       </div>
-    </aside>
+    </main>
+  </div>
 
-    <div class="mobile-topbar">
-      <button class="icon-button" id="mobile-menu" aria-label="Open navigation">☰</button>
-      <div class="mobile-brand"><span class="brand-dot"></span><strong>eventkit</strong></div>
-      <button class="icon-button" data-action="reset-workspace" aria-label="Reset workspace">↺</button>
-    </div>
+  <!-- ==========================================================================
+       PAGE 2: WORKSPACE VIEW (Opens directly upon user action, same black theme)
+       No sidebar — 6 liquid-metal navigation pills on top!
+       ========================================================================== -->
+  <div id="workspace-page" class="workspace-page">
+    <!-- Top Navigation Bar on Page 2 -->
+    <header class="header workspace-topbar">
+      <!-- Left: Logo (clicking it returns to Home Page) -->
+      <a href="#top" class="logo" id="workspace-logo" aria-label="EventKit Home">
+        <svg class="logo-mark" viewBox="0 0 24 24" fill="currentColor">
+          <g transform="rotate(-30 12 12)">
+            <circle cx="7.3" cy="3.2" r="1.45"/>
+            <rect x="5.5" y="4.7" width="3.6" height="14.6" rx="1.8"/>
+            <rect x="14.9" y="4.7" width="3.6" height="14.6" rx="1.8"/>
+            <circle cx="16.7" cy="20.8" r="1.45"/>
+          </g>
+        </svg>
+        <span>eventkit</span>
+      </a>
 
-    <main class="workspace">
+      <!-- Center: The 6 Navigation Pills on Top -->
+      <nav id="workspace-nav" class="workspace-nav-pills" aria-label="Workspace Sections">
+        <button class="nav-pill nav-item is-active" data-view="overview">Overview</button>
+        <button class="nav-pill nav-item" data-view="roster">Attendance Roster</button>
+        <button class="nav-pill nav-item" data-view="schedule">Schedule & Clashes</button>
+        <button class="nav-pill nav-item" data-view="checkin">Arrival Desk</button>
+        <button class="nav-pill nav-item" data-view="certificates">Credentials</button>
+        <button class="nav-pill nav-item" data-view="exports">Deliverables</button>
+      </nav>
+
+      <!-- Right: Action Buttons & Return Home -->
+      <div class="workspace-top-actions">
+        <button class="btn btn-ghost" data-action="load-demo">✦ Explore Demo</button>
+        <button class="btn btn-solid" data-action="reset-workspace">New Event +</button>
+        <button class="btn btn-ghost" id="btn-return-home" aria-label="Return to Home">← Home</button>
+      </div>
+    </header>
+
+    <div class="workspace-main-wrapper">
+      <main class="workspace">
       <header class="workspace-header">
-        <div>
-          <p class="breadcrumb"><span>WORKSPACE</span><i>/</i><span id="header-event-id">NEW EVENT</span></p>
-          <h1 id="header-event-name">Your event, under control.</h1>
+        <div class="workspace-title-group">
+          <p class="breadcrumb">
+            <span class="breadcrumb-root">WORKSPACE</span>
+            <i class="breadcrumb-sep">/</i>
+            <span class="breadcrumb-tag" id="header-event-id">NEW EVENT</span>
+          </p>
+          <h1 id="header-event-name">Your event, orchestrated to perfection.</h1>
         </div>
         <div class="header-actions">
-          <span class="secure-label"><span class="secure-icon">⌁</span> Private by default</span>
-          <button class="button button-ghost" data-action="load-demo"><span>✦</span> Load demo</button>
-          <button class="button button-dark" data-action="reset-workspace">New event <span>+</span></button>
+          <div class="secure-label">
+            <span class="secure-icon">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="10" height="8" rx="2"/><path d="M5.5 6V4.5C5.5 3.1 6.6 2 8 2C9.4 2 10.5 3.1 10.5 4.5V6"/></svg>
+            </span>
+            <span>Private by Design</span>
+          </div>
+          <button class="button button-accent-outline" data-action="load-demo">
+            <span class="button-icon">✦</span>
+            <span>Explore Demo</span>
+          </button>
+          <button class="button button-dark" data-action="reset-workspace">
+            <span>New Event</span>
+            <span class="plus-icon">+</span>
+          </button>
         </div>
       </header>
 
       <section class="setup-banner" id="setup-banner">
+        <div class="setup-banner-backdrop" aria-hidden="true"></div>
         <div class="setup-copy">
-          <div class="setup-icon">✦</div>
-          <div><p class="eyebrow">Start here</p><h2>Turn three exports into a ready event kit.</h2><p>Nothing leaves this browser. Load your files, review every decision, then export what your team needs.</p></div>
+          <div class="setup-icon-box">
+            <div class="setup-icon">✦</div>
+          </div>
+          <div class="setup-text">
+            <p class="eyebrow">The Atelier Workspace</p>
+            <h2>Transform raw event spreadsheets into a polished executive kit.</h2>
+            <p>Every attendee row validated. Every room clash surfaced. Clean credentials generated in memory. Nothing ever leaves your browser window.</p>
+          </div>
         </div>
-        <button class="button button-gold" data-action="focus-import">Set up workspace <span>→</span></button>
+        <div class="setup-action-wrapper">
+          <button class="button button-gold button-glow" data-action="focus-import">
+            <span>Set Up Workspace</span>
+            <span class="arrow-icon">→</span>
+          </button>
+        </div>
       </section>
 
       <section class="import-panel" id="import-panel">
         <div class="section-title-row">
-          <div><p class="eyebrow">01 / Input</p><h2>Bring your event data</h2><p class="muted">CSV files are parsed locally. Add what you have — the core workspace works with registrations alone.</p></div>
-          <div class="privacy-note"><span class="lock-symbol">▣</span><span>Local only<br><small>No upload or account</small></span></div>
+          <div>
+            <p class="eyebrow">Step 01 · Data Ingestion</p>
+            <h2>Bring your event data</h2>
+            <p class="muted">Parsed locally in browser memory. Upload what you have — registrations are all that is required to begin.</p>
+          </div>
+          <div class="privacy-note">
+            <span class="lock-symbol">
+              <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="8" width="12" height="10" rx="3"/><path d="M7 8V5.5C7 3.8 8.3 2.5 10 2.5C11.7 2.5 13 3.8 13 5.5V8"/><circle cx="10" cy="13" r="1.5" fill="currentColor"/></svg>
+            </span>
+            <div>
+              <strong>Pure Client-Side</strong>
+              <small>No account · No database · No telemetry</small>
+            </div>
+          </div>
         </div>
+
         <div class="event-details">
-          <label class="field"><span>Event name</span><input id="event-name-input" type="text" value="Untitled event" placeholder="e.g. Spring Summit 2026"></label>
-          <label class="field"><span>Organizer</span><input id="organizer-input" type="text" value="Your organization" placeholder="e.g. Campus Tech Club"></label>
-          <label class="field"><span>Event ID</span><input id="event-id-input" type="text" value="my-event-2026" placeholder="stable-event-id"></label>
-          <label class="field"><span>Timezone</span><select id="timezone-input"><option value="local">Browser local time</option><option value="UTC">UTC</option><option value="Asia/Kolkata">Asia/Kolkata</option><option value="America/New_York">America/New_York</option><option value="Europe/London">Europe/London</option></select></label>
+          <label class="field">
+            <span class="field-label">Event Name</span>
+            <input id="event-name-input" type="text" value="Untitled event" placeholder="e.g. Geneva Luxury Tech Forum 2026">
+          </label>
+          <label class="field">
+            <span class="field-label">Host Organization</span>
+            <input id="organizer-input" type="text" value="Your organization" placeholder="e.g. Prestige Institute">
+          </label>
+          <label class="field">
+            <span class="field-label">Event Identifier</span>
+            <input id="event-id-input" type="text" value="my-event-2026" placeholder="e.g. summit-2026">
+          </label>
+          <label class="field">
+            <span class="field-label">Operational Timezone</span>
+            <select id="timezone-input">
+              <option value="local">Browser local time</option>
+              <option value="UTC">UTC (Universal)</option>
+              <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+              <option value="America/New_York">America/New_York (EST)</option>
+              <option value="Europe/London">Europe/London (BST/GMT)</option>
+              <option value="Europe/Paris">Europe/Paris (CET)</option>
+            </select>
+          </label>
         </div>
+
         <div class="upload-grid">
           <label class="upload-card upload-primary" for="registrations-file">
             <input id="registrations-file" type="file" accept=".csv,text/csv">
-            <span class="upload-badge required">Required</span><span class="upload-symbol">♧</span><strong>Registrations</strong><small>Name, email and optional details</small><span class="upload-action">Choose CSV <b>↗</b></span><span class="file-name" id="registrations-file-name">No file selected</span>
+            <div class="upload-card-top">
+              <span class="upload-badge required">Mandatory</span>
+              <span class="upload-format">CSV format</span>
+            </div>
+            <div class="upload-card-center">
+              <span class="upload-symbol">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="7" r="4"/><path d="M2 20C2 16.5 5.5 14 9 14C12.5 14 16 16.5 16 20"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 20c0-2.5-1.8-4.6-4.5-5.2"/></svg>
+              </span>
+              <strong>Registrations</strong>
+              <small>Attendee names, emails, phones & colleges</small>
+            </div>
+            <div class="upload-card-bottom">
+              <span class="upload-action">
+                <span>Select file</span>
+                <span class="upload-arrow">↗</span>
+              </span>
+              <span class="file-name" id="registrations-file-name">No file selected</span>
+            </div>
           </label>
+
           <label class="upload-card" for="attendance-file">
             <input id="attendance-file" type="file" accept=".csv,text/csv">
-            <span class="upload-badge">Optional</span><span class="upload-symbol">✓</span><strong>Attendance</strong><small>Use it to issue certificates</small><span class="upload-action">Choose CSV <b>↗</b></span><span class="file-name" id="attendance-file-name">No file selected</span>
+            <div class="upload-card-top">
+              <span class="upload-badge">Optional</span>
+              <span class="upload-format">CSV format</span>
+            </div>
+            <div class="upload-card-center">
+              <span class="upload-symbol">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              </span>
+              <strong>Attendance Record</strong>
+              <small>Verified emails to qualify credentials</small>
+            </div>
+            <div class="upload-card-bottom">
+              <span class="upload-action">
+                <span>Select file</span>
+                <span class="upload-arrow">↗</span>
+              </span>
+              <span class="file-name" id="attendance-file-name">No file selected</span>
+            </div>
           </label>
+
           <label class="upload-card" for="schedule-file">
             <input id="schedule-file" type="file" accept=".csv,text/csv">
-            <span class="upload-badge">Optional</span><span class="upload-symbol">◷</span><strong>Schedule</strong><small>Find room and speaker clashes</small><span class="upload-action">Choose CSV <b>↗</b></span><span class="file-name" id="schedule-file-name">No file selected</span>
+            <div class="upload-card-top">
+              <span class="upload-badge">Optional</span>
+              <span class="upload-format">CSV format</span>
+            </div>
+            <div class="upload-card-center">
+              <span class="upload-symbol">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M10 14h4M12 12v4"/></svg>
+              </span>
+              <strong>Schedule & Agenda</strong>
+              <small>Detect room clashes & double-booked speakers</small>
+            </div>
+            <div class="upload-card-bottom">
+              <span class="upload-action">
+                <span>Select file</span>
+                <span class="upload-arrow">↗</span>
+              </span>
+              <span class="file-name" id="schedule-file-name">No file selected</span>
+            </div>
           </label>
         </div>
-        <div class="setup-footer"><span id="import-status" class="muted">Waiting for your registrations CSV.</span><button class="button button-gold" data-action="run-analysis" id="run-analysis">Analyze event <span>→</span></button></div>
+
+        <div class="setup-footer">
+          <div class="setup-status-box">
+            <span class="status-pulse-dot"></span>
+            <span id="import-status" class="muted">Awaiting your registrations CSV file.</span>
+          </div>
+          <button class="button button-gold button-glow" data-action="run-analysis" id="run-analysis">
+            <span>Analyze Event Data</span>
+            <span class="arrow-icon">→</span>
+          </button>
+        </div>
       </section>
 
       <div id="toast-region" class="toast-region" aria-live="polite"></div>
@@ -102,17 +1725,239 @@
       <section class="view is-hidden" id="view-certificates" data-view-panel="certificates"></section>
       <section class="view is-hidden" id="view-exports" data-view-panel="exports"></section>
 
-      <footer class="workspace-footer"><span>eventkit runs entirely in your browser.</span><span><button class="text-button" data-action="show-about">Privacy model</button><i>·</i><a href="https://github.com/" target="_blank" rel="noreferrer">Open source foundation ↗</a></span></footer>
+      <footer class="workspace-footer">
+        <div class="footer-left">
+          <span class="footer-seal">✦</span>
+          <span>EventKit operates entirely inside this client browser environment.</span>
+        </div>
+        <div class="footer-right">
+          <button class="text-button" data-action="show-about">Security Architecture</button>
+          <i class="footer-sep">·</i>
+          <a href="https://github.com/" target="_blank" rel="noreferrer" class="footer-link">Open Source Foundation ↗</a>
+        </div>
+      </footer>
     </main>
   </div>
 
   <dialog class="modal" id="about-modal">
-    <button class="modal-close" data-action="close-about" aria-label="Close">×</button>
-    <p class="eyebrow">The eventkit promise</p><h2>Your data stays yours.</h2>
-    <p>EventKit is designed for organizers who need useful event operations without uploading attendee data to a platform. This website parses CSV files locally in your browser. It does not need an account, API key, database or server-side upload.</p>
-    <div class="modal-list"><div><b>Local processing</b><span>Registration, attendance and schedule data stays in this tab.</span></div><div><b>Explainable</b><span>Every flagged row includes a reason and a next action.</span></div><div><b>Portable</b><span>Export CSV, JSON, ICS, SVG and a self-contained event pack.</span></div></div>
-    <button class="button button-dark" data-action="close-about">Got it</button>
+    <div class="modal-card">
+      <button class="modal-close" data-action="close-about" aria-label="Close dialog">×</button>
+      <div class="modal-header">
+        <div class="modal-icon-badge">✦</div>
+        <div>
+          <p class="eyebrow">The EventKit Standard</p>
+          <h2>Sovereign Data. Absolute Privacy.</h2>
+        </div>
+      </div>
+      <p class="modal-lead">EventKit is architected for organizers who demand exceptional operational rigor without sacrificing attendee confidentiality. Your data is never uploaded to remote servers or third-party analytical pipelines.</p>
+      
+      <div class="modal-list">
+        <div class="modal-list-item">
+          <div class="item-icon">1</div>
+          <div class="item-content">
+            <b>In-Memory Browser Engine</b>
+            <span>Attendee records, attendance rolls, and agenda data remain strictly inside this browser tab's RAM.</span>
+          </div>
+        </div>
+        <div class="modal-list-item">
+          <div class="item-icon">2</div>
+          <div class="item-content">
+            <b>Deterministic & Explainable</b>
+            <span>Every sanitized record, deduplicated entry, and schedule conflict is accompanied by a transparent audit rationale.</span>
+          </div>
+        </div>
+        <div class="modal-list-item">
+          <div class="item-icon">3</div>
+          <div class="item-content">
+            <b>Bespoke Portability</b>
+            <span>Export clean CSVs, JSON manifest digests, standard ICS calendar feeds, verifiable SVGs, and encrypted snapshots instantly.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="button button-gold button-glow" data-action="close-about">Return to Workspace</button>
+      </div>
+    </div>
   </dialog>
+    </div>
+  </div>
+
   <script src="app.js"></script>
+
+  <!-- Script: Entrance animation fallback + mobile menu IIFE -->
+  <script>
+    (function () {
+      "use strict";
+
+      const appears = document.querySelectorAll(".appear");
+      const heroPhoto = document.querySelector(".hero-photo");
+      const burger = document.querySelector(".burger");
+      const siteNav = document.getElementById("site-nav");
+      const backdrop = document.querySelector(".menu-backdrop");
+
+      // 1. Each .appear element adds .is-in on its own animationend
+      appears.forEach(function (el) {
+        el.addEventListener("animationend", function () {
+          el.classList.add("is-in");
+        }, { once: true });
+      });
+
+      if (heroPhoto) {
+        heroPhoto.addEventListener("animationend", function () {
+          heroPhoto.classList.add("is-in");
+        }, { once: true });
+      }
+
+      // 2. JS fallback: after two rAFs, if no animations running or finished, force .is-in
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          var hasRunning = false;
+          appears.forEach(function (el) {
+            if (typeof el.getAnimations === "function") {
+              var anims = el.getAnimations();
+              if (anims && anims.some(function (a) { return a.playState === "running" || a.playState === "finished"; })) {
+                hasRunning = true;
+              }
+            }
+          });
+          if (!hasRunning) {
+            appears.forEach(function (el) { el.classList.add("is-in"); });
+            if (heroPhoto) heroPhoto.classList.add("is-in");
+          }
+        });
+      });
+
+      // 3. Burger toggles body.menu-open
+      function setMenu(open) {
+        if (open) {
+          document.body.classList.add("menu-open");
+          if (burger) {
+            burger.setAttribute("aria-expanded", "true");
+            burger.setAttribute("aria-label", "Close menu");
+          }
+        } else {
+          document.body.classList.remove("menu-open");
+          if (burger) {
+            burger.setAttribute("aria-expanded", "false");
+            burger.setAttribute("aria-label", "Open menu");
+          }
+        }
+      }
+
+      if (burger) {
+        burger.addEventListener("click", function () {
+          var isOpen = document.body.classList.contains("menu-open");
+          setMenu(!isOpen);
+        });
+      }
+
+      if (backdrop) {
+        backdrop.addEventListener("click", function () {
+          setMenu(false);
+        });
+      }
+
+      // 4. Nav links and Escape close the menu
+      if (siteNav) {
+        siteNav.addEventListener("click", function (e) {
+          if (e.target.closest("a")) {
+            setMenu(false);
+          }
+        });
+      }
+
+      window.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          setMenu(false);
+        }
+      });
+
+      // 5. Resize to ≥901px closes the menu
+      window.addEventListener("resize", function () {
+        if (window.innerWidth >= 901) {
+          setMenu(false);
+        }
+      });
+
+
+      // Page switching logic: Opens Page 2 cleanly without scrolling
+      function openWorkspacePage(viewName, autoLoadDemo) {
+        document.body.classList.add("workspace-open");
+        window.scrollTo({ top: 0, behavior: "instant" });
+        if (typeof showView === "function") {
+          showView(viewName || "overview");
+        }
+        // Sync active nav pills on both topbars
+        document.querySelectorAll("[data-view]").forEach(function (pill) {
+          pill.classList.toggle("is-active", pill.dataset.view === (viewName || "overview"));
+        });
+        if (autoLoadDemo && typeof handleAction === "function") {
+          setTimeout(function () {
+            handleAction("load-demo");
+          }, 150);
+        }
+      }
+
+      function openHomePage() {
+        document.body.classList.remove("workspace-open");
+        window.scrollTo({ top: 0, behavior: "instant" });
+        history.pushState(null, null, " ");
+      }
+
+      // Page 1 Home navigation clicks
+      document.querySelectorAll('#site-nav .nav-pill').forEach(function (pill) {
+        pill.addEventListener("click", function (e) {
+          e.preventDefault();
+          const view = pill.dataset.targetView || "overview";
+          setMenu(false);
+          openWorkspacePage(view, false);
+        });
+      });
+
+      // Page 2 Workspace top nav clicks
+      document.querySelectorAll('#workspace-nav .nav-pill').forEach(function (pill) {
+        pill.addEventListener("click", function (e) {
+          e.preventDefault();
+          const view = pill.dataset.view || "overview";
+          if (typeof showView === "function") {
+            showView(view);
+          }
+          document.querySelectorAll('#workspace-nav .nav-pill').forEach(function (p) {
+            p.classList.toggle("is-active", p.dataset.view === view);
+          });
+        });
+      });
+
+      // Launch Workspace button clicks (Page 1)
+      document.querySelectorAll('a[href="#start"]').forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          openWorkspacePage("overview", false);
+        });
+      });
+
+      // Explore Demo button clicks (Page 1)
+      document.querySelectorAll('a[href="#demo"]').forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          openWorkspacePage("overview", true);
+        });
+      });
+
+      // Return to Home clicks (Page 2)
+      document.querySelectorAll('[data-action="go-home"], #btn-return-home, #workspace-logo').forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          openHomePage();
+        });
+      });
+
+      // Check initial URL hash
+      if (window.location.hash === "#workspace" || window.location.hash === "#start" || window.location.hash === "#demo") {
+        openWorkspacePage("overview", window.location.hash === "#demo");
+      }
+    })();
+  </script>
 </body>
 </html>
